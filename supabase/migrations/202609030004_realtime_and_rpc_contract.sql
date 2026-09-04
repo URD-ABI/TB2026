@@ -35,7 +35,7 @@ create function public.apply_score_event(
   p_team_id uuid,
   p_points integer,
   p_keys integer,
-  p_reason text,
+  p_source text,
   p_idempotency_key uuid
 )
 returns uuid
@@ -91,7 +91,7 @@ begin
     p_team_id,
     p_points,
     p_keys,
-    p_reason,
+    p_source,
     p_idempotency_key,
     auth.uid()
   )
@@ -102,7 +102,7 @@ end;
 $$;
 
 comment on function public.apply_score_event(uuid, uuid, integer, integer, text, uuid)
-is 'Applies an idempotent administrator score change and records its reason.';
+is 'Applies an idempotent administrator score change and records its source.';
 
 revoke all on function public.apply_score_event(uuid, uuid, integer, integer, text, uuid) from public;
 grant execute on function public.apply_score_event(uuid, uuid, integer, integer, text, uuid) to authenticated;
