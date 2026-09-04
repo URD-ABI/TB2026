@@ -1,6 +1,6 @@
 import type { RankedTeam, Team } from "./types";
 
-function compareTeams(left: Team, right: Team): number {
+export function compareTeams(left: Team, right: Team): number {
   if (left.points !== right.points) return right.points - left.points;
   if (left.keys !== right.keys) return right.keys - left.keys;
   if (left.tieBreakPriority === null && right.tieBreakPriority !== null) return 1;
@@ -8,7 +8,7 @@ function compareTeams(left: Team, right: Team): number {
   if (left.tieBreakPriority !== null && right.tieBreakPriority !== null && left.tieBreakPriority !== right.tieBreakPriority) {
     return left.tieBreakPriority - right.tieBreakPriority;
   }
-  return left.displayOrder - right.displayOrder;
+  return 0;
 }
 
 export function rankTeams(teams: Team[]): RankedTeam[] {
@@ -29,4 +29,3 @@ export function rankTeams(teams: Team[]): RankedTeam[] {
       requiresTieBreak: teams.some((other) => other.id !== team.id && other.points === team.points && other.keys === team.keys && team.tieBreakPriority === null && other.tieBreakPriority === null),
     }));
 }
-

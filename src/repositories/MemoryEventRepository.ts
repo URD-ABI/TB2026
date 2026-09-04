@@ -18,9 +18,9 @@ export class MemoryEventRepository implements EventRepository {
   }
 
   private emit(): void {
-    const listeners = this.listeners.get(this.snapshot.event.slug);
-    if (!listeners) return;
-    for (const listener of listeners) listener(this.clone());
+    for (const listeners of this.listeners.values()) {
+      for (const listener of listeners) listener(this.clone());
+    }
   }
 
   async getSnapshot(slug: string): Promise<EventSnapshot> {
@@ -32,7 +32,7 @@ export class MemoryEventRepository implements EventRepository {
     const set = this.listeners.get(slug) ?? new Set<Listener>();
     set.add(listener);
     this.listeners.set(slug, set);
-    if (slug === this.snapshot.event.slug) listener(this.clone());
+    listener(this.clone());
     return () => set.delete(listener);
   }
 
@@ -51,7 +51,7 @@ export class MemoryEventRepository implements EventRepository {
 
   async revealNextParticipant(eventId: string): Promise<{ participantId: string; teamId: string }> {
     const participant = this.snapshot.participants
-      .filter((item) => item.eventId === eventId && item.revealedTeamId === null)
+      .filter((item) => item.eventId === eventId && item.revealedAt === null)
       .sort((left, right) => left.revealOrder - right.revealOrder)[0];
     if (!participant) throw new Error("no_participant");
     const teamId = this.assignments[participant.id];
@@ -78,4 +78,3 @@ export class MemoryEventRepository implements EventRepository {
     this.emit();
   }
 }
-

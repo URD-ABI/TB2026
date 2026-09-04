@@ -16,6 +16,21 @@ describe("MemoryEventRepository", () => {
     expect(snapshot).not.toBe(received[0]);
   });
 
+  it("émet immédiatement même si le slug demandé diffère", () => {
+    const repository = new MemoryEventRepository(makeEventSnapshot(), {});
+    const received: unknown[] = [];
+    repository.subscribe("another-slug", (snapshot) => received.push(snapshot));
+    expect(received).toHaveLength(1);
+  });
+
+  it("notifie les abonnés existants quand le slug de l’événement change", async () => {
+    const repository = new MemoryEventRepository(makeEventSnapshot(), {});
+    const received: string[] = [];
+    repository.subscribe("tournoi-des-arcanes", (snapshot) => received.push(snapshot.event.slug));
+    await repository.updateEvent({ ...makeEventSnapshot().event, slug: "nouveau-slug" });
+    expect(received).toEqual(["tournoi-des-arcanes", "nouveau-slug"]);
+  });
+
   it("applique un score et efface le départage précédent", async () => {
     const repository = new MemoryEventRepository(makeEventSnapshot({
       teams: [makeTeam({ tieBreakPriority: 3, points: 10, keys: 1 })],
@@ -44,6 +59,12 @@ describe("MemoryEventRepository", () => {
     const first = (await repository.getSnapshot("tournoi-des-arcanes")).participants.find((p) => p.id === "first");
     expect(first?.revealedTeamId).toBe("team-a");
     expect(first?.revealedAt).toEqual(expect.any(String));
+  });
+
+  it("considère un participant non horodaté comme non révélé", async () => {
+    const participant = makeParticipant({ revealedTeamId: "team-a", revealedAt: null });
+    const repository = new MemoryEventRepository(makeEventSnapshot({ participants: [participant] }), { "participant-1": "team-a" });
+    await expect(repository.revealNextParticipant("event-1")).resolves.toEqual({ participantId: "participant-1", teamId: "team-a" });
   });
 
   it("échoue avec no_participant quand il ne reste personne à révéler", async () => {

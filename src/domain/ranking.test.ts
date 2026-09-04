@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rankTeams } from "./ranking";
+import { compareTeams, rankTeams } from "./ranking";
 import { makeTeam } from "../test/fixtures";
 
 describe("rankTeams", () => {
@@ -30,5 +30,12 @@ describe("rankTeams", () => {
       ["a", 2, false],
       ["b", 1, false],
     ]);
+  });
+
+  it("expose un comparateur qui considère les équipes identiques comme égales", () => {
+    const first = makeTeam({ id: "a", displayOrder: 0, points: 20, keys: 2, tieBreakPriority: 1 });
+    const second = makeTeam({ id: "b", displayOrder: 9, points: 20, keys: 2, tieBreakPriority: 1 });
+    expect(compareTeams(first, second)).toBe(0);
+    expect(compareTeams(second, first)).toBe(0);
   });
 });
