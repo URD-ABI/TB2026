@@ -48,6 +48,55 @@ describe("MemoryEventRepository", () => {
     expect(received).toHaveLength(2);
   });
 
+  it("rejette une équipe inconnue sans consommer la clé d’idempotence", async () => {
+    const repository = new MemoryEventRepository(makeEventSnapshot(), {});
+    const received: Awaited<ReturnType<typeof repository.getSnapshot>>[] = [];
+    repository.subscribe("tournoi-des-arcanes", (snapshot) => received.push(snapshot));
+    const input = {
+      eventId: "missing-event", teamId: "missing-team", points: 7, keys: 2,
+      source: "challenge", idempotencyKey: "retryable-score",
+    };
+
+    await expect(repository.applyScore(input)).rejects.toThrow("team_not_found");
+    expect(received).toHaveLength(1);
+
+    await repository.applyScore({ ...input, eventId: "event-1", teamId: "team-a" });
+    expect((await repository.getSnapshot("tournoi-des-arcanes")).teams[0]).toMatchObject({ points: 7, keys: 2 });
+    expect(received).toHaveLength(2);
+  });
+
+  it("n’applique qu’une seule fois une clé d’idempotence répétée", async () => {
+    const repository = new MemoryEventRepository(makeEventSnapshot(), {});
+    const received: Awaited<ReturnType<typeof repository.getSnapshot>>[] = [];
+    repository.subscribe("tournoi-des-arcanes", (snapshot) => received.push(snapshot));
+    const input = { eventId: "event-1", teamId: "team-a", points: 5, keys: 1, source: "quiz", idempotencyKey: "once" };
+
+    await repository.applyScore(input);
+    await repository.applyScore(input);
+    expect((await repository.getSnapshot("tournoi-des-arcanes")).teams[0]).toMatchObject({ points: 5, keys: 1 });
+    expect(received).toHaveLength(2);
+  });
+
+  it("cesse de notifier un abonné après désinscription", async () => {
+    const repository = new MemoryEventRepository(makeEventSnapshot(), {});
+    const received: Awaited<ReturnType<typeof repository.getSnapshot>>[] = [];
+    const unsubscribe = repository.subscribe("tournoi-des-arcanes", (snapshot) => received.push(snapshot));
+    unsubscribe();
+
+    await repository.updateTeam(makeTeam({ name: "Après désinscription" }));
+    expect(received).toHaveLength(1);
+  });
+
+  it("donne une copie indépendante à chaque abonné", async () => {
+    const repository = new MemoryEventRepository(makeEventSnapshot(), {});
+    let secondSnapshot: Awaited<ReturnType<typeof repository.getSnapshot>> | undefined;
+    repository.subscribe("tournoi-des-arcanes", (snapshot) => { snapshot.teams[0].name = "mutated"; });
+    repository.subscribe("tournoi-des-arcanes", (snapshot) => { secondSnapshot = snapshot; });
+
+    await repository.updateTeam(makeTeam({ points: 10 }));
+    expect(secondSnapshot?.teams[0].name).toBe("Équipe A");
+  });
+
   it("révèle les participants dans l’ordre avec leur assignment", async () => {
     const participants = [
       makeParticipant({ id: "late", revealOrder: 2 }),

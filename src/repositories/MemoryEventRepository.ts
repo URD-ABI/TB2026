@@ -5,7 +5,7 @@ type Listener = (snapshot: EventSnapshot) => void;
 export class MemoryEventRepository implements EventRepository {
   private snapshot: EventSnapshot;
   private readonly assignments: Record<string, string>;
-  private readonly listeners = new Map<string, Set<Listener>>();
+  private readonly listeners = new Set<Listener>();
   private readonly appliedScores = new Set<string>();
 
   constructor(snapshot: EventSnapshot, assignments: Record<string, string>) {
@@ -18,9 +18,7 @@ export class MemoryEventRepository implements EventRepository {
   }
 
   private emit(): void {
-    for (const listeners of this.listeners.values()) {
-      for (const listener of listeners) listener(this.clone());
-    }
+    for (const listener of this.listeners) listener(this.clone());
   }
 
   async getSnapshot(slug: string): Promise<EventSnapshot> {
@@ -29,11 +27,9 @@ export class MemoryEventRepository implements EventRepository {
   }
 
   subscribe(slug: string, listener: Listener): Unsubscribe {
-    const set = this.listeners.get(slug) ?? new Set<Listener>();
-    set.add(listener);
-    this.listeners.set(slug, set);
+    this.listeners.add(listener);
     listener(this.clone());
-    return () => set.delete(listener);
+    return () => this.listeners.delete(listener);
   }
 
   async updateEvent(event: EventSnapshot["event"]): Promise<void> {
@@ -67,6 +63,8 @@ export class MemoryEventRepository implements EventRepository {
   }
 
   async applyScore(input: Parameters<EventRepository["applyScore"]>[0]): Promise<void> {
+    const target = this.snapshot.teams.find((team) => team.id === input.teamId && team.eventId === input.eventId);
+    if (!target) throw new Error("team_not_found");
     if (this.appliedScores.has(input.idempotencyKey)) return;
     this.appliedScores.add(input.idempotencyKey);
     this.snapshot = {
