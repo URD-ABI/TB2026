@@ -1,6 +1,6 @@
 begin;
 
-select plan(137);
+select plan(144);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -81,6 +81,7 @@ select col_default_is('public', 'quiz_sessions', 'answer_visible', 'false', 'ans
 select has_function('public', 'is_admin', array[]::text[], 'is_admin RPC exists');
 select has_function('public', 'apply_score_event', array['uuid', 'uuid', 'integer', 'integer', 'text', 'uuid']::text[], 'apply_score_event has the required signature');
 select has_function('public', 'reveal_next_participant', array['uuid']::text[], 'reveal_next_participant has the required signature');
+select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'apply_score_event' and oidvectortypes(p.proargtypes) = 'uuid, uuid, integer, integer, text, uuid'), array['p_event_id', 'p_team_id', 'p_points', 'p_keys', 'p_reason', 'p_idempotency_key']::text[], 'apply_score_event exposes the expected parameter names');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'is_admin' and oidvectortypes(p.proargtypes) = ''), true, 'is_admin is security definer');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'apply_score_event' and oidvectortypes(p.proargtypes) = 'uuid, uuid, integer, integer, text, uuid'), true, 'apply_score_event is security definer');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_next_participant' and oidvectortypes(p.proargtypes) = 'uuid'), true, 'reveal_next_participant is security definer');
@@ -98,6 +99,14 @@ select is((select relrowsecurity from pg_class where oid = 'public.quiz_question
 select is((select relrowsecurity from pg_class where oid = 'public.quiz_question_answers'::regclass), true, 'quiz question answers has RLS');
 select is((select relrowsecurity from pg_class where oid = 'public.quiz_sessions'::regclass), true, 'quiz sessions has RLS');
 select is((select relrowsecurity from pg_class where oid = 'public.quiz_answers'::regclass), true, 'quiz answers has RLS');
+
+-- Projector-facing state must be emitted through the standard Supabase Realtime publication.
+select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'events'), 'events is in supabase_realtime');
+select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'teams'), 'teams is in supabase_realtime');
+select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'participants'), 'participants is in supabase_realtime');
+select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'challenges'), 'challenges is in supabase_realtime');
+select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_categories'), 'quiz categories is in supabase_realtime');
+select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_sessions'), 'quiz sessions is in supabase_realtime');
 
 -- Public content has an explicit SELECT policy for both client roles.
 select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'events' and cmd = 'SELECT' and roles @> array['anon'::name, 'authenticated'::name]), 'events public read policy exists');

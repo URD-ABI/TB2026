@@ -19,7 +19,7 @@ npx supabase test db
 Copy-Item .env.example .env
 ```
 
-Set `VITE_SUPABASE_URL` to the Project URL and `VITE_SUPABASE_PUBLISHABLE_KEY` to the publishable key. Do not commit `.env`; it must not contain a service-role key or any other secret.
+Set `VITE_SUPABASE_URL` to the Project URL and `VITE_SUPABASE_ANON_KEY` to the publishable anon key. Do not commit `.env`; it must not contain a service-role key or any other secret.
 
 Open the local Studio URL printed by `supabase start`, create an email/password user in **Authentication → Users**, and copy its UUID. In the SQL editor, insert that UUID as the administrator:
 
@@ -40,7 +40,7 @@ npx supabase db push
 
 To load the optional deterministic demonstration data into a hosted project, run the contents of `supabase/seed.sql` once in the project SQL editor after the migration push. Then create an email/password user in **Authentication → Users** and insert its UUID into `public.admin_users` using the SQL above.
 
-In **Project Settings → API**, copy the hosted Project URL and publishable (anon) key into `.env`, using the same `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` names. The publishable key is intended for browser use; never put `service_role` credentials in browser environment variables or source control.
+In **Project Settings → API**, copy the hosted Project URL and publishable anon key into `.env`, using the same `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` names. The anon key is intended for browser use; never put `service_role` credentials in browser environment variables or source control.
 
 ## Data access model
 
