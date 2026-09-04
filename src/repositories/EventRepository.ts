@@ -16,7 +16,6 @@ export interface EventRepository {
   subscribe(slug: string, listener: (snapshot: EventSnapshot) => void): Unsubscribe;
   updateEvent(event: EventConfig): Promise<void>;
   updateTeam(team: Team): Promise<void>;
-  revealNextParticipant(eventId: string): Promise<{ participantId: string; teamId: string }>;
+  revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }>;
   applyScore(input: { eventId: string; teamId: string; points: number; keys: number; source: string; idempotencyKey: string }): Promise<void>;
 }
-

@@ -45,11 +45,17 @@ export class MemoryEventRepository implements EventRepository {
     this.emit();
   }
 
-  async revealNextParticipant(eventId: string): Promise<{ participantId: string; teamId: string }> {
-    const participant = this.snapshot.participants
+  async revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }> {
+    const participant = this.snapshot.participants.find((item) => item.eventId === eventId && item.id === participantId);
+    if (!participant) throw new Error("no_participant");
+    if (participant.revealedAt !== null) {
+      if (participant.revealedTeamId === null) throw new Error("assignment_missing");
+      return { participantId: participant.id, teamId: participant.revealedTeamId };
+    }
+    const nextParticipant = this.snapshot.participants
       .filter((item) => item.eventId === eventId && item.revealedAt === null)
       .sort((left, right) => left.revealOrder - right.revealOrder)[0];
-    if (!participant) throw new Error("no_participant");
+    if (!nextParticipant || nextParticipant.id !== participantId) throw new Error("not_next_participant");
     const teamId = this.assignments[participant.id];
     if (!teamId) throw new Error("assignment_missing");
     this.snapshot = {

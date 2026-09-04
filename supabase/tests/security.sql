@@ -1,6 +1,6 @@
 begin;
 
-select plan(144);
+select plan(147);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -80,11 +80,11 @@ select col_default_is('public', 'quiz_sessions', 'answer_visible', 'false', 'ans
 -- RPC surface and definer hardening.
 select has_function('public', 'is_admin', array[]::text[], 'is_admin RPC exists');
 select has_function('public', 'apply_score_event', array['uuid', 'uuid', 'integer', 'integer', 'text', 'uuid']::text[], 'apply_score_event has the required signature');
-select has_function('public', 'reveal_next_participant', array['uuid']::text[], 'reveal_next_participant has the required signature');
+select has_function('public', 'reveal_next_participant', array['uuid', 'uuid']::text[], 'reveal_next_participant has the required signature');
 select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'apply_score_event' and oidvectortypes(p.proargtypes) = 'uuid, uuid, integer, integer, text, uuid'), array['p_event_id', 'p_team_id', 'p_points', 'p_keys', 'p_source', 'p_idempotency_key']::text[], 'apply_score_event exposes the expected parameter names');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'is_admin' and oidvectortypes(p.proargtypes) = ''), true, 'is_admin is security definer');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'apply_score_event' and oidvectortypes(p.proargtypes) = 'uuid, uuid, integer, integer, text, uuid'), true, 'apply_score_event is security definer');
-select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_next_participant' and oidvectortypes(p.proargtypes) = 'uuid'), true, 'reveal_next_participant is security definer');
+select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_next_participant' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), true, 'reveal_next_participant is security definer');
 
 -- Every application table must have RLS, including hidden implementation data.
 select is((select relrowsecurity from pg_class where oid = 'public.events'::regclass), true, 'events has RLS');
@@ -190,6 +190,7 @@ reset role;
 select is((select points from public.teams where id = '20000000-0000-0000-0000-000000000001'), 11, 'score event adds points once');
 select is((select keys from public.teams where id = '20000000-0000-0000-0000-000000000001'), 2, 'score event adds keys once');
 select is((select tie_break_priority is null from public.teams where id = '20000000-0000-0000-0000-000000000001'), true, 'score application clears tie-break priority');
+select is((select tie_break_priority is null from public.teams where id = '20000000-0000-0000-0000-000000000002'), true, 'score application clears every team tie-break priority for the event');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
 select lives_ok($$select public.apply_score_event('11111111-1111-1111-1111-111111111111', '20000000-0000-0000-0000-000000000001', 10, 2, 'test', 'dddddddd-dddd-dddd-dddd-dddddddddddd')$$, 'score retry succeeds');
@@ -206,17 +207,19 @@ select is((select count(*) from public.score_events where idempotency_key = 'eee
 -- Reveal is deliberately public-executable but only reveals the next public row,
 -- never the hidden assignment relation.
 set local role anon;
-select lives_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111')$$, 'anon can execute the reveal RPC');
+select throws_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000002')$$, 'P0001', 'not_next_participant', 'a participant that is not first in the reveal order is rejected');
+select is((select participant_id from public.reveal_next_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001')), '30000000-0000-0000-0000-000000000001'::uuid, 'anon can reveal the displayed next participant');
 select is((select revealed_team_id from public.participants where id = '30000000-0000-0000-0000-000000000001'), '20000000-0000-0000-0000-000000000001'::uuid, 'reveal returns the assigned team on the participant');
 select is((select revealed_at is not null from public.participants where id = '30000000-0000-0000-0000-000000000001'), true, 'first participant is marked revealed');
-select is((select revealed_at is null from public.participants where id = '30000000-0000-0000-0000-000000000002'), true, 'reveal chooses the lowest unrevealed reveal order');
 select is((select count(*) from public.participant_assignments), 0::bigint, 'reveal RPC does not expose assignments to anon');
-select lives_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111')$$, 'second reveal advances to the next participant');
-select throws_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111')$$, 'P0001', 'no_participant', 'exhausted event raises no_participant');
+select is((select participant_id from public.reveal_next_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001')), '30000000-0000-0000-0000-000000000001'::uuid, 'retry returns the same participant result');
+select is((select revealed_at is null from public.participants where id = '30000000-0000-0000-0000-000000000002'), true, 'reveal retry does not advance to the next participant');
+select is((select participant_id from public.reveal_next_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000002')), '30000000-0000-0000-0000-000000000002'::uuid, 'explicit second participant reveal succeeds');
+select throws_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000099')$$, 'P0001', 'no_participant', 'unknown participant raises no_participant');
 reset role;
 insert into public.participants (id, event_id, name, reveal_order) values ('30000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'Unassigned', 3);
 set local role anon;
-select throws_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111')$$, 'P0001', 'assignment_missing', 'participant without hidden assignment raises assignment_missing');
+select throws_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000003')$$, 'P0001', 'assignment_missing', 'participant without hidden assignment raises assignment_missing');
 reset role;
 
 select * from finish();

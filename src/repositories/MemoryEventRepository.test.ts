@@ -104,21 +104,43 @@ describe("MemoryEventRepository", () => {
     ];
     const repository = new MemoryEventRepository(makeEventSnapshot({ participants }), { first: "team-a" });
 
-    await expect(repository.revealNextParticipant("event-1")).resolves.toEqual({ participantId: "first", teamId: "team-a" });
+    await expect(repository.revealParticipant("event-1", "first")).resolves.toEqual({ participantId: "first", teamId: "team-a" });
     const first = (await repository.getSnapshot("tournoi-des-arcanes")).participants.find((p) => p.id === "first");
     expect(first?.revealedTeamId).toBe("team-a");
     expect(first?.revealedAt).toEqual(expect.any(String));
   });
 
+  it("révèle un participant explicitement et rend son retry idempotent", async () => {
+    const participants = [
+      makeParticipant({ id: "first", revealOrder: 1 }),
+      makeParticipant({ id: "late", revealOrder: 2 }),
+    ];
+    const repository = new MemoryEventRepository(makeEventSnapshot({ participants }), {
+      first: "team-a",
+      late: "team-a",
+    });
+
+    await expect(repository.revealParticipant("event-1", "late")).rejects.toThrow("not_next_participant");
+    const firstReveal = await repository.revealParticipant("event-1", "first");
+    expect(firstReveal).toEqual({ participantId: "first", teamId: "team-a" });
+
+    const retryReveal = await repository.revealParticipant("event-1", "first");
+    expect(retryReveal).toEqual(firstReveal);
+    const afterRetry = await repository.getSnapshot("tournoi-des-arcanes");
+    expect(afterRetry.participants.find((participant) => participant.id === "late")?.revealedAt).toBeNull();
+
+    await expect(repository.revealParticipant("event-1", "late")).resolves.toEqual({ participantId: "late", teamId: "team-a" });
+  });
+
   it("considère un participant non horodaté comme non révélé", async () => {
     const participant = makeParticipant({ revealedTeamId: "team-a", revealedAt: null });
     const repository = new MemoryEventRepository(makeEventSnapshot({ participants: [participant] }), { "participant-1": "team-a" });
-    await expect(repository.revealNextParticipant("event-1")).resolves.toEqual({ participantId: "participant-1", teamId: "team-a" });
+    await expect(repository.revealParticipant("event-1", "participant-1")).resolves.toEqual({ participantId: "participant-1", teamId: "team-a" });
   });
 
   it("échoue avec no_participant quand il ne reste personne à révéler", async () => {
     const participant = makeParticipant({ revealedTeamId: "team-a", revealedAt: "2026-01-01T00:00:00.000Z" });
     const repository = new MemoryEventRepository(makeEventSnapshot({ participants: [participant] }), {});
-    await expect(repository.revealNextParticipant("event-1")).rejects.toThrow("no_participant");
+    await expect(repository.revealParticipant("event-1", "missing-participant")).rejects.toThrow("no_participant");
   });
 });
