@@ -26,19 +26,27 @@ export function AppProviders({ repository, eventSlug, children }: AppProvidersPr
 
   useEffect(() => {
     let active = true;
-    let unsubscribe: Unsubscribe | undefined;
+    const acceptSnapshot = (nextSnapshot: EventSnapshot) => {
+      if (active) setSnapshot(nextSnapshot);
+    };
+    const acceptStatus = (nextStatus: ConnectionStatus) => {
+      if (active) setStatus(nextStatus);
+    };
+    const unsubscribe: Unsubscribe = repository.subscribe(
+      eventSlug,
+      acceptSnapshot,
+      acceptStatus,
+    );
 
     void repository.getSnapshot(eventSlug).then((firstSnapshot) => {
-      if (!active) return;
-      setSnapshot(firstSnapshot);
-      unsubscribe = repository.subscribe(eventSlug, setSnapshot, setStatus);
+      acceptSnapshot(firstSnapshot);
     }).catch(() => {
-      if (active) setStatus("reconnecting");
+      acceptStatus("reconnecting");
     });
 
     return () => {
       active = false;
-      unsubscribe?.();
+      unsubscribe();
     };
   }, [eventSlug, repository]);
 

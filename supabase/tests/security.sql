@@ -1,6 +1,6 @@
 begin;
 
-select plan(147);
+select plan(148);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -106,6 +106,7 @@ select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_
 select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'participants'), 'participants is in supabase_realtime');
 select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'challenges'), 'challenges is in supabase_realtime');
 select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_categories'), 'quiz categories is in supabase_realtime');
+select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_questions'), 'quiz questions is in supabase_realtime');
 select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_sessions'), 'quiz sessions is in supabase_realtime');
 
 -- Public content has an explicit SELECT policy for both client roles.

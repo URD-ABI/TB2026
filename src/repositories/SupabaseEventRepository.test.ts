@@ -43,6 +43,9 @@ const questionRow = {
 
 function makeQueryClient(results: Record<string, QueryResult>) {
   const calls: QueryCall[] = [];
+  const getPublicUrl = vi.fn((path: string) => ({
+    data: { publicUrl: `https://project-ref.supabase.co/storage/v1/object/public/event-media/${path}` },
+  }));
   const from = vi.fn((table: string) => {
     const call: QueryCall = { table, operation: "select", filters: [] };
     calls.push(call);
@@ -57,7 +60,8 @@ function makeQueryClient(results: Record<string, QueryResult>) {
     };
     return builder;
   });
-  return { client: { from }, calls };
+  const storage = { from: vi.fn(() => ({ getPublicUrl })) };
+  return { client: { from, storage }, calls, getPublicUrl };
 }
 
 function makeSnapshotClient(overrides: Record<string, QueryResult> = {}) {
@@ -123,14 +127,63 @@ describe("SupabaseEventRepository", () => {
     const repository = new SupabaseEventRepository(client as never);
 
     await expect(repository.getSnapshot("tournoi-des-arcanes")).resolves.toEqual({
-      event: mapEventRow(eventRow), teams: [mapTeamRow(teamRow)], participants: [mapParticipantRow(participantRow)],
-      challenges: [mapChallengeRow(challengeRow)], categories: [mapCategoryRow(categoryRow)],
+      event: {
+        ...mapEventRow(eventRow),
+        backgroundUrl: "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/background.webp",
+      },
+      teams: [mapTeamRow(teamRow)],
+      participants: [{
+        ...mapParticipantRow(participantRow),
+        photoUrl: "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/alex.webp",
+      }],
+      challenges: [{
+        ...mapChallengeRow(challengeRow),
+        imageUrl: "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/challenge.webp",
+      }],
+      categories: [{
+        ...mapCategoryRow(categoryRow),
+        imageUrl: "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/category.webp",
+      }],
       questions: [mapQuestionRow(questionRow)],
     });
     expect(calls[0]).toMatchObject({ table: "events", filters: [["eq", "slug", "tournoi-des-arcanes"]] });
     for (const table of ["teams", "participants", "challenges", "quiz_categories"]) {
       expect(calls).toContainEqual(expect.objectContaining({ table, filters: [["eq", "event_id", "event-1"]] }));
     }
+  });
+
+  it("résout chaque chemin média public depuis le bucket event-media", async () => {
+    const { client, getPublicUrl } = makeSnapshotClient();
+    const repository = new SupabaseEventRepository(client as never);
+
+    const snapshot = await repository.getSnapshot("tournoi-des-arcanes");
+
+    expect(client.storage.from).toHaveBeenCalledWith("event-media");
+    expect(getPublicUrl.mock.calls.map(([path]) => path)).toEqual(expect.arrayContaining([
+      "event-1/background.webp",
+      "event-1/alex.webp",
+      "event-1/challenge.webp",
+      "event-1/category.webp",
+    ]));
+    expect(snapshot.event.backgroundUrl).toMatch(/^https:\/\//);
+    expect(snapshot.participants[0].photoUrl).toMatch(/^https:\/\//);
+    expect(snapshot.challenges[0].imageUrl).toMatch(/^https:\/\//);
+    expect(snapshot.categories[0].imageUrl).toMatch(/^https:\/\//);
+  });
+
+  it("reconvertit l'URL publique du fond en chemin avant la mise à jour", async () => {
+    const { client, calls } = makeSnapshotClient({ events: { data: null, error: null } });
+    const repository = new SupabaseEventRepository(client as never);
+    const publicUrl = "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/background.webp";
+
+    await repository.updateEvent({
+      ...mapEventRow(eventRow),
+      backgroundUrl: publicUrl,
+    });
+
+    const update = calls.find((call) => call.table === "events" && call.operation === "update");
+    expect(update?.payload).toMatchObject({ background_path: "event-1/background.webp" });
+    expect(JSON.stringify(update?.payload)).not.toContain(publicUrl);
   });
 
   it("charge les questions uniquement depuis les catégories de l'événement", async () => {
@@ -239,7 +292,7 @@ describe("SupabaseEventRepository", () => {
     );
     await vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(snapshots).toHaveLength(1));
-    expect(channel.on).toHaveBeenCalledTimes(6);
+    expect(channel.on).toHaveBeenCalledTimes(7);
     expect(channel.on).toHaveBeenCalledWith(
       "postgres_changes",
       { event: "*", schema: "public", table: "events", filter: "id=eq.event-1" },
@@ -252,6 +305,11 @@ describe("SupabaseEventRepository", () => {
         expect.any(Function),
       );
     }
+    expect(channel.on).toHaveBeenCalledWith(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "quiz_questions" },
+      expect.any(Function),
+    );
     statusHandler?.("SUBSCRIBED");
     statusHandler?.("CHANNEL_ERROR");
     expect(statuses).toEqual(["online", "reconnecting"]);
@@ -269,4 +327,94 @@ describe("SupabaseEventRepository", () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(snapshots).toHaveLength(2);
   });
+
+  it("retente le bootstrap après un échec et installe finalement le canal", async () => {
+    vi.useFakeTimers();
+    const channel = { on: vi.fn(() => channel), subscribe: vi.fn(() => channel) };
+    const client = { channel: vi.fn(() => channel), removeChannel: vi.fn() };
+    const repository = new SupabaseEventRepository(client as never);
+    const getSnapshot = vi.spyOn(repository, "getSnapshot")
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(makeExpectedSnapshot("Après reprise"));
+    const statuses: string[] = [];
+
+    repository.subscribe("tournoi-des-arcanes", vi.fn(), (status) => statuses.push(status));
+    await vi.waitFor(() => expect(statuses).toContain("reconnecting"));
+    expect(client.channel).not.toHaveBeenCalled();
+
+    await vi.runOnlyPendingTimersAsync();
+    await vi.waitFor(() => expect(client.channel).toHaveBeenCalledOnce());
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    expect(channel.subscribe).toHaveBeenCalledOnce();
+  });
+
+  it("recharge après la confirmation SUBSCRIBED pour fermer la fenêtre d'abonnement", async () => {
+    const channel = { on: vi.fn(() => channel), subscribe: vi.fn() };
+    let statusHandler: ((status: string) => void) | undefined;
+    channel.subscribe.mockImplementation((handler: (status: string) => void) => {
+      statusHandler = handler;
+      return channel;
+    });
+    const client = { channel: vi.fn(() => channel), removeChannel: vi.fn() };
+    const repository = new SupabaseEventRepository(client as never);
+    vi.spyOn(repository, "getSnapshot")
+      .mockResolvedValueOnce(makeExpectedSnapshot("Avant abonnement"))
+      .mockResolvedValueOnce(makeExpectedSnapshot("Après abonnement"));
+    const received: string[] = [];
+
+    repository.subscribe("tournoi-des-arcanes", (snapshot) => received.push(snapshot.teams[0].name));
+    await vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalledOnce());
+    statusHandler?.("SUBSCRIBED");
+
+    await vi.waitFor(() => expect(received).toEqual(["Avant abonnement", "Après abonnement"]));
+  });
+
+  it("empêche un ancien reload concurrent d'écraser le snapshot le plus récent", async () => {
+    vi.useFakeTimers();
+    const handlers: Array<() => void> = [];
+    const channel = {
+      on: vi.fn((_type: string, _filter: unknown, handler: () => void) => { handlers.push(handler); return channel; }),
+      subscribe: vi.fn(() => channel),
+    };
+    const client = { channel: vi.fn(() => channel), removeChannel: vi.fn() };
+    const repository = new SupabaseEventRepository(client as never);
+    const older = deferredSnapshot();
+    const newer = deferredSnapshot();
+    vi.spyOn(repository, "getSnapshot")
+      .mockResolvedValueOnce(makeExpectedSnapshot("Initial"))
+      .mockImplementationOnce(() => older.promise)
+      .mockImplementationOnce(() => newer.promise);
+    const received: string[] = [];
+
+    repository.subscribe("tournoi-des-arcanes", (snapshot) => received.push(snapshot.teams[0].name));
+    await vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalledOnce());
+    handlers[0]();
+    await vi.advanceTimersByTimeAsync(50);
+    handlers[1]();
+    await vi.advanceTimersByTimeAsync(50);
+
+    newer.resolve(makeExpectedSnapshot("Nouveau"));
+    await vi.waitFor(() => expect(received.at(-1)).toBe("Nouveau"));
+    older.resolve(makeExpectedSnapshot("Ancien"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(received.at(-1)).toBe("Nouveau");
+  });
 });
+
+function makeExpectedSnapshot(teamName: string) {
+  return {
+    event: mapEventRow(eventRow),
+    teams: [{ ...mapTeamRow(teamRow), name: teamName }],
+    participants: [mapParticipantRow(participantRow)],
+    challenges: [mapChallengeRow(challengeRow)],
+    categories: [mapCategoryRow(categoryRow)],
+    questions: [mapQuestionRow(questionRow)],
+  };
+}
+
+function deferredSnapshot() {
+  let resolve!: (snapshot: ReturnType<typeof makeExpectedSnapshot>) => void;
+  const promise = new Promise<ReturnType<typeof makeExpectedSnapshot>>((done) => { resolve = done; });
+  return { promise, resolve };
+}

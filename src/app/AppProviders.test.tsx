@@ -51,6 +51,17 @@ function Probe() {
 }
 
 describe("AppProviders", () => {
+  it("s'abonne immédiatement et accepte un snapshot temps réel après l'échec du chargement initial", async () => {
+    const fake = makeRepository(Promise.reject(new Error("offline")));
+    render(<AppProviders repository={fake.repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
+
+    expect(fake.repository.subscribe).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status", { name: /chargement de l'événement/i })).toBeInTheDocument();
+
+    act(() => fake.emitSnapshot(makeEventSnapshot({ teams: [makeTeam({ name: "Phénix" })] })));
+    expect(await screen.findByText("équipe:Phénix")).toBeInTheDocument();
+  });
+
   it("affiche un chargement accessible jusqu'au premier instantané", async () => {
     const first = deferred<EventSnapshot>();
     const { repository } = makeRepository(first.promise);

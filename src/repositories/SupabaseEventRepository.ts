@@ -17,6 +17,9 @@ import type {
 type Row = Record<string, unknown>;
 type QueryResult<T> = { data: T | null; error: { message: string } | null };
 
+const MEDIA_BUCKET = "event-media";
+const BOOTSTRAP_RETRY_DELAY_MS = 1_000;
+
 function stringValue(row: Row, field: string): string {
   return row[field] as string;
 }
@@ -105,8 +108,31 @@ function ordered<T extends { displayOrder: number }>(items: T[]): T[] {
   return [...items].sort((left, right) => left.displayOrder - right.displayOrder);
 }
 
+function storagePath(value: string | null): string | null {
+  if (value === null) return null;
+
+  try {
+    const url = new URL(value);
+    const marker = `/storage/v1/object/public/${MEDIA_BUCKET}/`;
+    if (!url.pathname.startsWith(marker)) throw new Error("invalid_event_media_url");
+    const path = decodeURIComponent(url.pathname.slice(marker.length));
+    if (!path || path.split("/").some((part) => part === "." || part === "..")) {
+      throw new Error("invalid_event_media_path");
+    }
+    return path;
+  } catch (error) {
+    if (error instanceof TypeError) return value;
+    throw error;
+  }
+}
+
 export class SupabaseEventRepository implements EventRepository {
   constructor(private readonly client: SupabaseClient) {}
+
+  private publicMediaUrl(path: string | null): string | null {
+    if (path === null || !this.client.storage) return path;
+    return this.client.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
+  }
 
   async getSnapshot(slug: string): Promise<EventSnapshot> {
     const eventResult = await this.client
@@ -138,7 +164,23 @@ export class SupabaseEventRepository implements EventRepository {
       questions = ordered(unwrap(questionsResult).map(mapQuestionRow));
     }
 
-    return { event, teams, participants, challenges, categories, questions };
+    return {
+      event: { ...event, backgroundUrl: this.publicMediaUrl(event.backgroundUrl) },
+      teams,
+      participants: participants.map((participant) => ({
+        ...participant,
+        photoUrl: this.publicMediaUrl(participant.photoUrl),
+      })),
+      challenges: challenges.map((challenge) => ({
+        ...challenge,
+        imageUrl: this.publicMediaUrl(challenge.imageUrl),
+      })),
+      categories: categories.map((category) => ({
+        ...category,
+        imageUrl: this.publicMediaUrl(category.imageUrl),
+      })),
+      questions,
+    };
   }
 
   subscribe(
@@ -148,15 +190,18 @@ export class SupabaseEventRepository implements EventRepository {
   ): Unsubscribe {
     let disposed = false;
     let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+    let bootstrapRetryTimer: ReturnType<typeof setTimeout> | undefined;
     let channel: ReturnType<SupabaseClient["channel"]> | undefined;
+    let reloadVersion = 0;
 
     const reload = async (): Promise<EventSnapshot | undefined> => {
+      const version = ++reloadVersion;
       try {
         const snapshot = await this.getSnapshot(slug);
-        if (!disposed) listener(snapshot);
+        if (!disposed && version === reloadVersion) listener(snapshot);
         return snapshot;
       } catch {
-        if (!disposed) connectionListener("reconnecting");
+        if (!disposed && version === reloadVersion) connectionListener("reconnecting");
         return undefined;
       }
     };
@@ -170,9 +215,16 @@ export class SupabaseEventRepository implements EventRepository {
       }, 50);
     };
 
-    void (async () => {
+    const bootstrap = async (): Promise<void> => {
       const initialSnapshot = await reload();
-      if (!initialSnapshot || disposed) return;
+      if (disposed) return;
+      if (!initialSnapshot) {
+        bootstrapRetryTimer = setTimeout(() => {
+          bootstrapRetryTimer = undefined;
+          void bootstrap();
+        }, BOOTSTRAP_RETRY_DELAY_MS);
+        return;
+      }
       const eventId = initialSnapshot.event.id;
       channel = this.client.channel(`event:${eventId}`);
       channel.on(
@@ -187,14 +239,24 @@ export class SupabaseEventRepository implements EventRepository {
           scheduleReload,
         );
       }
+      channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "quiz_questions" },
+        scheduleReload,
+      );
       channel.subscribe((status) => {
-        if (!disposed) connectionListener(status === "SUBSCRIBED" ? "online" : "reconnecting");
+        if (disposed) return;
+        connectionListener(status === "SUBSCRIBED" ? "online" : "reconnecting");
+        if (status === "SUBSCRIBED") scheduleReload();
       });
-    })();
+    };
+
+    void bootstrap();
 
     return () => {
       disposed = true;
       if (reloadTimer !== undefined) clearTimeout(reloadTimer);
+      if (bootstrapRetryTimer !== undefined) clearTimeout(bootstrapRetryTimer);
       if (channel) void this.client.removeChannel(channel);
     };
   }
@@ -204,7 +266,7 @@ export class SupabaseEventRepository implements EventRepository {
       slug: event.slug,
       title: event.title,
       subtitle: event.subtitle,
-      background_path: event.backgroundUrl,
+      background_path: storagePath(event.backgroundUrl),
       quiz_enabled: event.quizEnabled,
     }).eq("id", event.id) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
