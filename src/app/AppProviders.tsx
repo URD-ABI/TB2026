@@ -5,9 +5,10 @@ import type {
   EventSnapshot,
   Unsubscribe,
 } from "../repositories/EventRepository";
+import { ConnectionBanner } from "../components/ConnectionBanner";
 
 type EventContextValue = {
-  snapshot: EventSnapshot | null;
+  snapshot: EventSnapshot;
   status: ConnectionStatus;
   repository: EventRepository;
 };
@@ -45,21 +46,17 @@ export function AppProviders({ repository, eventSlug, children }: AppProvidersPr
   }, [eventSlug, repository]);
 
   const contextValue = useMemo<EventContextValue>(
-    () => ({ snapshot, status, repository }),
+    () => ({ snapshot: snapshot as EventSnapshot, status, repository }),
     [repository, snapshot, status],
   );
 
   if (snapshot === null) {
-    return <div role="status" aria-label="Chargement de l'événement">Chargement de l’événement…</div>;
+    return <div className="loading-screen" role="status" aria-label="Chargement de l'événement">Chargement de l’événement…</div>;
   }
 
   return (
     <EventContext.Provider value={contextValue}>
-      {status === "reconnecting" && (
-        <div role="status" aria-label="Connexion interrompue">
-          Reconnexion en cours… Les dernières données restent affichées.
-        </div>
-      )}
+      <ConnectionBanner status={status} />
       {children}
     </EventContext.Provider>
   );
