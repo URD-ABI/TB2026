@@ -87,6 +87,7 @@ export function AssignmentPage() {
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [visitedTeamIds, setVisitedTeamIds] = useState<Set<string>>(() => new Set());
   const [result, setResult] = useState<RevealResult | null>(null);
+  const [arrivalParticipantId, setArrivalParticipantId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reducedMotion] = useState(prefersReducedMotion);
@@ -118,6 +119,7 @@ export function AssignmentPage() {
     setBusy(true);
     setError(null);
     setResult(null);
+    setArrivalParticipantId(null);
     setCeremonyParticipant(currentParticipant);
     setActiveTeamId(null);
     setVisitedTeamIds(new Set());
@@ -162,6 +164,7 @@ export function AssignmentPage() {
 
     setActiveTeamId(outcome.value.teamId);
     setResult({ participant: currentParticipant, teamId: outcome.value.teamId });
+    setArrivalParticipantId(reducedMotion ? null : currentParticipant.id);
     setCeremonyParticipant(null);
     busyRef.current = false;
     setBusy(false);
@@ -171,6 +174,16 @@ export function AssignmentPage() {
     setResult(null);
     setActiveTeamId(null);
     setVisitedTeamIds(new Set());
+    if (reducedMotion) {
+      setArrivalParticipantId(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      timersRef.current.delete(timer);
+      if (mountedRef.current) setArrivalParticipantId(null);
+    }, 1_000);
+    timersRef.current.add(timer);
   }
 
   const displayedParticipant = ceremonyParticipant ?? currentParticipant;
@@ -228,7 +241,7 @@ export function AssignmentPage() {
                     key={participant.id}
                     participant={participant}
                     team={team}
-                    isNew={!reducedMotion && result?.participant.id === participant.id}
+                    isNew={!reducedMotion && arrivalParticipantId === participant.id}
                   />
                 ))}
                 {members.length === 0 && <span className="team-composition__empty">En attente…</span>}

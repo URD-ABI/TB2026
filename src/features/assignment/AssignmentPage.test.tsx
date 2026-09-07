@@ -193,6 +193,26 @@ describe("AssignmentPage", () => {
     expect(screen.getByRole("heading", { name: "Benoît Leroy" })).toBeInTheDocument();
   });
 
+  it("conserve brièvement l’animation du portrait dans la composition après la fermeture du résultat", async () => {
+    renderAssignment();
+    await flushInitialSnapshot();
+
+    fireEvent.click(screen.getByRole("button", { name: /lancer.*attribution/i }));
+    await finishCeremony();
+
+    const resultOverlay = screen.getByRole("dialog", { name: /attribution de Alice Durand/i });
+    fireEvent.click(within(resultOverlay).getByRole("button", { name: /participant suivant/i }));
+
+    const loups = screen.getByRole("article", { name: "Composition Loups des mers" });
+    const portrait = within(loups).getByRole("img", { name: "Alice Durand — Loups des mers" });
+    expect(portrait).toHaveClass("participant-token--new");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(portrait).not.toHaveClass("participant-token--new");
+  });
+
   it("affiche les initiales des participants sans image dans leur équipe", async () => {
     renderAssignment({
       participants: [

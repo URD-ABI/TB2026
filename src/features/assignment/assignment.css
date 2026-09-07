@@ -222,6 +222,10 @@
   animation: participant-arrival 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.assignment-page:has(.assignment-result-overlay) .participant-token--new {
+  animation-play-state: paused;
+}
+
 .team-composition__empty {
   color: rgba(232, 224, 205, 0.5);
   font-size: 0.78rem;
