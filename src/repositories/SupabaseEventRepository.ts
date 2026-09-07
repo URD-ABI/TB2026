@@ -212,7 +212,11 @@ export class SupabaseEventRepository implements EventRepository {
       reloadRetryTimer = setTimeout(async () => {
         reloadRetryTimer = undefined;
         const snapshot = await reload();
-        if (!snapshot) scheduleReloadRetry();
+        if (!snapshot) {
+          scheduleReloadRetry();
+        } else if (!disposed) {
+          connectionListener("online");
+        }
       }, BOOTSTRAP_RETRY_DELAY_MS);
     };
 

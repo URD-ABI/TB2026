@@ -381,6 +381,8 @@ describe("SupabaseEventRepository", () => {
     await vi.runOnlyPendingTimersAsync();
     await vi.waitFor(() => expect(received).toEqual(["Initial", "Après reprise"]));
     expect(getSnapshot).toHaveBeenCalledTimes(3);
+    expect(statuses).toEqual(["reconnecting", "online"]);
+    expect(channel.subscribe).toHaveBeenCalledOnce();
     unsubscribe();
   });
 
