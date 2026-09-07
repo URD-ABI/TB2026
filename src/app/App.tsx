@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { PublicLayout } from "../components/PublicLayout";
+import { AssignmentPage } from "../features/assignment/AssignmentPage";
 import { RankingPage } from "../features/ranking/RankingPage";
 
 type AppProps = {
@@ -34,7 +35,7 @@ export function App({ basename = import.meta.env.BASE_URL }: AppProps) {
         <Route path="/admin/*" element={<AdminPlaceholder />} />
         <Route element={<PublicLayout />}>
           <Route index element={<RankingPage />} />
-          <Route path="attribution" element={<PlaceholderPage title="Attribution" description="La cérémonie d’attribution des équipes se prépare." />} />
+          <Route path="attribution" element={<AssignmentPage />} />
           <Route path="defis" element={<PlaceholderPage title="Défis" description="Les cinq épreuves du tournoi seront bientôt révélées." />} />
           <Route path="quiz/*" element={<PlaceholderPage title="Quiz" description="Choisissez un thème et remportez des points pour votre équipe." />} />
         </Route>
