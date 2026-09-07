@@ -3,6 +3,11 @@
   gap: clamp(1.5rem, 3vw, 2.5rem);
 }
 
+.assignment-page__scene {
+  display: grid;
+  gap: clamp(1.5rem, 3vw, 2.5rem);
+}
+
 .assignment-page__heading {
   text-align: center;
 }
