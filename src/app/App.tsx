@@ -3,19 +3,11 @@ import { PublicLayout } from "../components/PublicLayout";
 import { AssignmentPage } from "../features/assignment/AssignmentPage";
 import { ChallengesPage } from "../features/challenges/ChallengesPage";
 import { RankingPage } from "../features/ranking/RankingPage";
+import { QuizPage } from "../features/quiz/QuizPage";
 
 type AppProps = {
   basename?: string;
 };
-
-function PlaceholderPage({ title, description }: { title: string; description: string }) {
-  return (
-    <section className="page-placeholder" aria-labelledby={`page-${title}`}>
-      <h2 id={`page-${title}`}>{title}</h2>
-      <p>{description}</p>
-    </section>
-  );
-}
 
 function AdminPlaceholder() {
   return (
@@ -38,7 +30,7 @@ export function App({ basename = import.meta.env.BASE_URL }: AppProps) {
           <Route index element={<RankingPage />} />
           <Route path="attribution" element={<AssignmentPage />} />
           <Route path="defis" element={<ChallengesPage />} />
-          <Route path="quiz/*" element={<PlaceholderPage title="Quiz" description="Choisissez un thème et remportez des points pour votre équipe." />} />
+          <Route path="quiz/*" element={<QuizPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

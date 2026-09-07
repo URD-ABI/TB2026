@@ -1,6 +1,6 @@
 begin;
 
-select plan(148);
+select plan(196);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -49,6 +49,7 @@ select has_column('public', 'challenges', 'display_order', 'challenges has displ
 select has_column('public', 'quiz_categories', 'event_id', 'categories belongs to an event');
 select has_column('public', 'quiz_categories', 'display_order', 'categories has display order');
 select has_column('public', 'quiz_categories', 'status', 'categories has a status');
+select has_column('public', 'quiz_categories', 'chosen_by_team_id', 'categories record the team that chose them');
 select has_column('public', 'quiz_questions', 'category_id', 'questions belongs to a category');
 select has_column('public', 'quiz_questions', 'points', 'questions has positive points');
 select has_column('public', 'quiz_question_answers', 'question_id', 'answers identifies a question');
@@ -153,7 +154,7 @@ select throws_ok($$insert into public.quiz_categories (id, event_id, title, disp
 select throws_ok($$insert into public.quiz_questions (id, category_id, prompt, points, display_order) values ('60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000001', 'No points', 0, 1)$$, '23514', null, 'quiz questions require positive points');
 select throws_ok($$insert into public.quiz_sessions (id, event_id, team_order) values ('70000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', array[]::uuid[])$$, '23505', null, 'there is one quiz session per event');
 select throws_ok($$insert into public.participant_assignments (participant_id, team_id) values ('30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001'), ('30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002')$$, '23505', null, 'participant assignment has one hidden team');
-select throws_ok($$insert into public.quiz_answers (id, session_id, question_id, team_id, correct) values ('80000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', true), ('80000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', false)$$, '23505', null, 'a question has one answer per session');
+select throws_ok($$insert into public.quiz_answers (id, session_id, question_id, team_id, correct, idempotency_key) values ('80000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', true, '81000000-0000-0000-0000-000000000001'), ('80000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', false, '81000000-0000-0000-0000-000000000002')$$, '23505', null, 'a question has one answer per session');
 
 -- RLS behavior as a real anonymous browser client.
 insert into public.participants (id, event_id, name, reveal_order) values
@@ -222,6 +223,121 @@ insert into public.participants (id, event_id, name, reveal_order) values ('3000
 set local role anon;
 select throws_ok($$select public.reveal_next_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000003')$$, 'P0001', 'assignment_missing', 'participant without hidden assignment raises assignment_missing');
 reset role;
+
+-- Quiz RPC surface, access boundaries, frozen order, and atomic progression.
+select has_function('public', 'start_quiz', array['uuid']::text[], 'start_quiz has the required signature');
+select has_function('public', 'choose_quiz_category', array['uuid', 'uuid', 'uuid']::text[], 'choose_quiz_category has the required signature');
+select has_function('public', 'reveal_quiz_answer', array['uuid', 'uuid']::text[], 'reveal_quiz_answer has the required signature');
+select has_function('public', 'answer_quiz_question', array['uuid', 'uuid', 'boolean', 'uuid']::text[], 'answer_quiz_question has the required signature');
+select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), array['p_event_id']::text[], 'start_quiz exposes named identifiers');
+select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'choose_quiz_category' and oidvectortypes(p.proargtypes) = 'uuid, uuid, uuid'), array['p_session_id', 'p_team_id', 'p_category_id']::text[], 'choose_quiz_category exposes named identifiers');
+select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), array['p_session_id', 'p_question_id']::text[], 'reveal_quiz_answer exposes named identifiers');
+select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'answer_quiz_question' and oidvectortypes(p.proargtypes) = 'uuid, uuid, boolean, uuid'), array['p_session_id', 'p_question_id', 'p_correct', 'p_idempotency_key']::text[], 'answer_quiz_question exposes named identifiers');
+select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), true, 'start_quiz is security definer');
+select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'choose_quiz_category' and oidvectortypes(p.proargtypes) = 'uuid, uuid, uuid'), true, 'choose_quiz_category is security definer');
+select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), true, 'reveal_quiz_answer is security definer');
+select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'answer_quiz_question' and oidvectortypes(p.proargtypes) = 'uuid, uuid, boolean, uuid'), true, 'answer_quiz_question is security definer');
+select ok(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'choose_quiz_category' and oidvectortypes(p.proargtypes) = 'uuid, uuid, uuid'), false), 'anon may execute only the public category choice mutation');
+select is(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), false), false, 'anon cannot start the quiz');
+select is(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), false), false, 'anon cannot reveal quiz answers');
+select is(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'answer_quiz_question' and oidvectortypes(p.proargtypes) = 'uuid, uuid, boolean, uuid'), false), false, 'anon cannot validate quiz answers');
+select ok(exists (select 1 from pg_indexes where schemaname = 'public' and tablename = 'quiz_categories' and indexdef like '%chosen_by_team_id%' and indexdef like '%UNIQUE%'), 'one team can choose at most one category per event');
+
+insert into public.events (id, slug, title, quiz_enabled) values
+  ('91111111-1111-1111-1111-111111111111', 'quiz-contract', 'Quiz contract', true),
+  ('92222222-2222-2222-2222-222222222222', 'quiz-unresolved', 'Quiz unresolved', true);
+insert into public.teams (id, event_id, name, color, display_order, points, keys, tie_break_priority) values
+  ('92000000-0000-0000-0000-000000000001', '91111111-1111-1111-1111-111111111111', 'First', '#111111', 0, 100, 0, null),
+  ('92000000-0000-0000-0000-000000000002', '91111111-1111-1111-1111-111111111111', 'Second', '#222222', 1, 80, 2, 1),
+  ('92000000-0000-0000-0000-000000000003', '91111111-1111-1111-1111-111111111111', 'Third', '#333333', 2, 80, 2, 2),
+  ('92000000-0000-0000-0000-000000000004', '91111111-1111-1111-1111-111111111111', 'Fourth', '#444444', 3, 40, 5, null),
+  ('92000000-0000-0000-0000-000000000005', '91111111-1111-1111-1111-111111111111', 'Fifth', '#555555', 4, 20, 9, null),
+  ('93000000-0000-0000-0000-000000000001', '92222222-2222-2222-2222-222222222222', 'Tied A', '#661111', 0, 50, 3, null),
+  ('93000000-0000-0000-0000-000000000002', '92222222-2222-2222-2222-222222222222', 'Tied B', '#662222', 1, 50, 3, null),
+  ('93000000-0000-0000-0000-000000000003', '92222222-2222-2222-2222-222222222222', 'Third', '#663333', 2, 30, 1, null),
+  ('93000000-0000-0000-0000-000000000004', '92222222-2222-2222-2222-222222222222', 'Fourth', '#664444', 3, 20, 1, null),
+  ('93000000-0000-0000-0000-000000000005', '92222222-2222-2222-2222-222222222222', 'Fifth', '#665555', 4, 10, 1, null);
+insert into public.quiz_categories (id, event_id, title, display_order) values
+  ('94000000-0000-0000-0000-000000000001', '91111111-1111-1111-1111-111111111111', 'Category 1', 0),
+  ('94000000-0000-0000-0000-000000000002', '91111111-1111-1111-1111-111111111111', 'Category 2', 1),
+  ('94000000-0000-0000-0000-000000000003', '91111111-1111-1111-1111-111111111111', 'Category 3', 2),
+  ('94000000-0000-0000-0000-000000000004', '91111111-1111-1111-1111-111111111111', 'Category 4', 3),
+  ('94000000-0000-0000-0000-000000000005', '91111111-1111-1111-1111-111111111111', 'Category 5', 4),
+  ('94000000-0000-0000-0000-000000000006', '91111111-1111-1111-1111-111111111111', 'Category 6', 5);
+insert into public.quiz_questions (id, category_id, prompt, points, display_order) values
+  ('95000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000001', 'First question?', 17, 0),
+  ('95000000-0000-0000-0000-000000000002', '94000000-0000-0000-0000-000000000001', 'Second question?', 25, 1);
+insert into public.quiz_question_answers (question_id, answer) values
+  ('95000000-0000-0000-0000-000000000001', 'First protected answer'),
+  ('95000000-0000-0000-0000-000000000002', 'Second protected answer');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.start_quiz('91111111-1111-1111-1111-111111111111')$$, 'admin starts the quiz');
+reset role;
+select is((select team_order from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), array[
+  '92000000-0000-0000-0000-000000000001'::uuid,
+  '92000000-0000-0000-0000-000000000002'::uuid,
+  '92000000-0000-0000-0000-000000000003'::uuid,
+  '92000000-0000-0000-0000-000000000004'::uuid,
+  '92000000-0000-0000-0000-000000000005'::uuid
+], 'start_quiz freezes points, keys, then manual tie-break order');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select throws_ok($$select public.start_quiz('92222222-2222-2222-2222-222222222222')$$, 'P0001', 'tie_break_required', 'start_quiz rejects an unresolved tie');
+reset role;
+
+update public.events set quiz_enabled = false where id = '91111111-1111-1111-1111-111111111111';
+set local role anon;
+select throws_ok($$select public.choose_quiz_category((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '92000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000001')$$, 'P0001', 'quiz_disabled', 'public choice is rejected while the quiz is disabled');
+reset role;
+update public.events set quiz_enabled = true where id = '91111111-1111-1111-1111-111111111111';
+set local role anon;
+select throws_ok($$select public.choose_quiz_category((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '92000000-0000-0000-0000-000000000002', '94000000-0000-0000-0000-000000000001')$$, 'P0001', 'not_current_team', 'a team outside the frozen turn cannot choose');
+select lives_ok($$select public.choose_quiz_category((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '92000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000001')$$, 'current team may choose an available category from the public screen');
+reset role;
+select is((select chosen_by_team_id from public.quiz_categories where id = '94000000-0000-0000-0000-000000000001'), '92000000-0000-0000-0000-000000000001'::uuid, 'category records the choosing team');
+select is((select status from public.quiz_categories where id = '94000000-0000-0000-0000-000000000001'), 'available', 'active category is not marked played before its final question');
+set local role anon;
+select throws_ok($$select public.choose_quiz_category((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '92000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000002')$$, 'P0001', 'team_already_chosen', 'one team cannot choose a second category');
+select throws_ok($$select public.choose_quiz_category((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '92000000-0000-0000-0000-000000000002', '94000000-0000-0000-0000-000000000001')$$, 'P0001', 'category_unavailable', 'one category cannot be chosen twice');
+select throws_ok($$select public.reveal_quiz_answer((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '95000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot reveal an answer');
+select throws_ok($$select public.answer_quiz_question((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '95000000-0000-0000-0000-000000000001', true, '96000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot validate an answer');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}', true);
+select throws_ok($$select public.start_quiz('91111111-1111-1111-1111-111111111111')$$, 'P0001', 'admin_required', 'a non-admin member cannot start the quiz');
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reveal_quiz_answer((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '95000000-0000-0000-0000-000000000001')$$, 'admin reveals the active answer');
+reset role;
+select is((select answer_visible from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), true, 'answer visibility is public session state');
+select is((select revealed_answer from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), 'First protected answer', 'reveal copies the protected answer into public state');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.answer_quiz_question((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '95000000-0000-0000-0000-000000000001', true, '96000000-0000-0000-0000-000000000001')$$, 'admin validates the first answer');
+reset role;
+select is((select points from public.teams where id = '92000000-0000-0000-0000-000000000001'), 117, 'a correct answer adds the fixed question value');
+select is((select count(*) from public.score_events where idempotency_key = '96000000-0000-0000-0000-000000000001'), 1::bigint, 'quiz scoring creates one score event');
+select is((select active_question_index from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), 1, 'answer advances to the next question atomically');
+select is((select answer_visible from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), false, 'answer validation hides the old answer');
+select is((select revealed_answer is null from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), true, 'answer validation clears the copied answer');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.answer_quiz_question((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '95000000-0000-0000-0000-000000000001', true, '96000000-0000-0000-0000-000000000001')$$, 'retrying the same answer is idempotent');
+reset role;
+select is((select points from public.teams where id = '92000000-0000-0000-0000-000000000001'), 117, 'answer retry never scores twice');
+select is((select count(*) from public.quiz_answers where question_id = '95000000-0000-0000-0000-000000000001'), 1::bigint, 'answer retry creates no duplicate validation');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reveal_quiz_answer((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '95000000-0000-0000-0000-000000000002')$$, 'admin reveals the second active answer');
+select lives_ok($$select public.answer_quiz_question((select id from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), '95000000-0000-0000-0000-000000000002', false, '96000000-0000-0000-0000-000000000002')$$, 'admin validates an incorrect answer without scoring');
+reset role;
+select is((select current_team_index from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), 1, 'last category question advances to the next frozen team');
+select is((select active_category_id is null from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), true, 'last category question returns the public screen to category choice');
+select is((select status from public.quiz_categories where id = '94000000-0000-0000-0000-000000000001'), 'played', 'completed category remains played');
 
 select * from finish();
 rollback;

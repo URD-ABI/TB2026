@@ -30,6 +30,7 @@ function makeRepository(initial: Promise<EventSnapshot>) {
       return unsubscribe;
     }),
     updateEvent: vi.fn(), updateTeam: vi.fn(), revealParticipant: vi.fn(), applyScore: vi.fn(),
+    chooseQuizCategory: vi.fn(),
   };
   return {
     repository,

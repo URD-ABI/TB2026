@@ -81,4 +81,37 @@ export class MemoryEventRepository implements EventRepository {
     };
     this.emit();
   }
+
+  async chooseQuizCategory(input: Parameters<EventRepository["chooseQuizCategory"]>[0]): Promise<void> {
+    const session = this.snapshot.quizSession;
+    if (!this.snapshot.event.quizEnabled) throw new Error("quiz_disabled");
+    if (!session || session.id !== input.sessionId || session.eventId !== input.eventId || session.startedAt === null) {
+      throw new Error("quiz_not_started");
+    }
+    const category = this.snapshot.categories.find((item) => item.id === input.categoryId && item.eventId === input.eventId);
+    if (!category || category.status !== "available" || category.chosenByTeamId !== null) {
+      throw new Error("category_unavailable");
+    }
+    if (this.snapshot.categories.some((item) => item.eventId === input.eventId && item.chosenByTeamId === input.teamId)) {
+      throw new Error("team_already_chosen");
+    }
+    if (session.activeCategoryId !== null) throw new Error("category_in_progress");
+    if (session.teamOrder[session.currentTeamIndex] !== input.teamId) throw new Error("not_current_team");
+    if (!this.snapshot.questions.some((question) => question.categoryId === category.id)) throw new Error("category_has_no_questions");
+
+    this.snapshot = {
+      ...this.snapshot,
+      categories: this.snapshot.categories.map((item) => item.id === category.id
+        ? { ...item, chosenByTeamId: input.teamId }
+        : item),
+      quizSession: {
+        ...session,
+        activeCategoryId: category.id,
+        activeQuestionIndex: 0,
+        answerVisible: false,
+        revealedAnswer: null,
+      },
+    };
+    this.emit();
+  }
 }

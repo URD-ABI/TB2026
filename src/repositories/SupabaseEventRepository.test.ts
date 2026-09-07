@@ -6,6 +6,7 @@ import {
   mapEventRow,
   mapParticipantRow,
   mapQuestionRow,
+  mapQuizSessionRow,
   mapTeamRow,
 } from "./SupabaseEventRepository";
 
@@ -35,10 +36,15 @@ const challengeRow = {
 };
 const categoryRow = {
   id: "category-1", event_id: "event-1", title: "Sortilèges",
-  image_path: "event-1/category.webp", display_order: 1, status: "available",
+  image_path: "event-1/category.webp", display_order: 1, status: "available", chosen_by_team_id: null,
 };
 const questionRow = {
   id: "question-1", category_id: "category-1", prompt: "Question ?", points: 20, display_order: 0,
+};
+const quizSessionRow = {
+  id: "session-1", event_id: "event-1", team_order: ["team-3", "team-1", "team-2"],
+  current_team_index: 1, active_category_id: "category-1", active_question_index: 0,
+  answer_visible: true, revealed_answer: "Lumos", started_at: "2026-12-18T18:00:00Z",
 };
 
 function makeQueryClient(results: Record<string, QueryResult>) {
@@ -72,6 +78,7 @@ function makeSnapshotClient(overrides: Record<string, QueryResult> = {}) {
     challenges: { data: [challengeRow], error: null },
     quiz_categories: { data: [categoryRow], error: null },
     quiz_questions: { data: [questionRow], error: null },
+    quiz_sessions: { data: quizSessionRow, error: null },
     ...overrides,
   });
 }
@@ -108,13 +115,21 @@ describe("mappers Supabase", () => {
   it("convertit les champs snake_case d'un thème", () => {
     expect(mapCategoryRow(categoryRow)).toEqual({
       id: "category-1", eventId: "event-1", title: "Sortilèges",
-      imageUrl: "event-1/category.webp", displayOrder: 1, status: "available",
+      imageUrl: "event-1/category.webp", displayOrder: 1, status: "available", chosenByTeamId: null,
     });
   });
 
   it("convertit les champs snake_case d'une question", () => {
     expect(mapQuestionRow(questionRow)).toEqual({
       id: "question-1", categoryId: "category-1", prompt: "Question ?", points: 20, displayOrder: 0,
+    });
+  });
+
+  it("convertit la session publique avec son ordre figé et l’état de question", () => {
+    expect(mapQuizSessionRow(quizSessionRow)).toEqual({
+      id: "session-1", eventId: "event-1", teamOrder: ["team-3", "team-1", "team-2"],
+      currentTeamIndex: 1, activeCategoryId: "category-1", activeQuestionIndex: 0,
+      answerVisible: true, revealedAnswer: "Lumos", startedAt: "2026-12-18T18:00:00Z",
     });
   });
 });
@@ -145,11 +160,15 @@ describe("SupabaseEventRepository", () => {
         imageUrl: "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/category.webp",
       }],
       questions: [mapQuestionRow(questionRow)],
+      quizSession: mapQuizSessionRow(quizSessionRow),
     });
     expect(calls[0]).toMatchObject({ table: "events", filters: [["eq", "slug", "tournoi-des-arcanes"]] });
     for (const table of ["teams", "participants", "challenges", "quiz_categories"]) {
       expect(calls).toContainEqual(expect.objectContaining({ table, filters: [["eq", "event_id", "event-1"]] }));
     }
+    expect(calls).toContainEqual(expect.objectContaining({
+      table: "quiz_sessions", filters: [["eq", "event_id", "event-1"]],
+    }));
   });
 
   it("résout chaque chemin média public depuis le bucket event-media", async () => {
@@ -483,6 +502,7 @@ function makeExpectedSnapshot(teamName: string) {
     challenges: [mapChallengeRow(challengeRow)],
     categories: [mapCategoryRow(categoryRow)],
     questions: [mapQuestionRow(questionRow)],
+    quizSession: mapQuizSessionRow(quizSessionRow),
   };
 }
 

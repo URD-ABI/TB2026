@@ -41,6 +41,7 @@ export type QuizCategory = {
   imageUrl: string | null;
   displayOrder: number;
   status: "available" | "played";
+  chosenByTeamId: Id | null;
 };
 
 export type QuizQuestion = {
@@ -53,6 +54,18 @@ export type QuizQuestion = {
 
 export type AdminQuizQuestion = QuizQuestion & { answer: string };
 
+export type QuizSession = {
+  id: Id;
+  eventId: Id;
+  teamOrder: Id[];
+  currentTeamIndex: number;
+  activeCategoryId: Id | null;
+  activeQuestionIndex: number;
+  answerVisible: boolean;
+  revealedAnswer: string | null;
+  startedAt: string | null;
+};
+
 export type EventConfig = {
   id: Id;
   slug: string;
@@ -63,4 +76,3 @@ export type EventConfig = {
 };
 
 export type RankedTeam = { team: Team; rank: number; requiresTieBreak: boolean };
-

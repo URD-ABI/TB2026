@@ -5,6 +5,7 @@ import type {
   Participant,
   QuizCategory,
   QuizQuestion,
+  QuizSession,
   Team,
 } from "../domain/types";
 import type {
@@ -85,6 +86,21 @@ export function mapCategoryRow(row: Row): QuizCategory {
     imageUrl: nullableString(row, "image_path"),
     displayOrder: row.display_order as number,
     status: row.status as QuizCategory["status"],
+    chosenByTeamId: nullableString(row, "chosen_by_team_id"),
+  };
+}
+
+export function mapQuizSessionRow(row: Row): QuizSession {
+  return {
+    id: stringValue(row, "id"),
+    eventId: stringValue(row, "event_id"),
+    teamOrder: row.team_order as string[],
+    currentTeamIndex: row.current_team_index as number,
+    activeCategoryId: nullableString(row, "active_category_id"),
+    activeQuestionIndex: row.active_question_index as number,
+    answerVisible: row.answer_visible as boolean,
+    revealedAnswer: nullableString(row, "revealed_answer"),
+    startedAt: nullableString(row, "started_at"),
   };
 }
 
@@ -142,12 +158,13 @@ export class SupabaseEventRepository implements EventRepository {
       .single() as QueryResult<Row>;
     const event = mapEventRow(unwrap(eventResult));
 
-    const [teamsResult, participantsResult, challengesResult, categoriesResult] = await Promise.all([
+    const [teamsResult, participantsResult, challengesResult, categoriesResult, sessionsResult] = await Promise.all([
       this.client.from("teams").select("*").eq("event_id", event.id),
       this.client.from("participants").select("*").eq("event_id", event.id),
       this.client.from("challenges").select("*").eq("event_id", event.id),
       this.client.from("quiz_categories").select("*").eq("event_id", event.id),
-    ]) as [QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>];
+      this.client.from("quiz_sessions").select("*").eq("event_id", event.id),
+    ]) as [QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[] | Row>];
 
     const teams = ordered(unwrap(teamsResult).map(mapTeamRow));
     const participants = [...unwrap(participantsResult).map(mapParticipantRow)]
@@ -155,6 +172,9 @@ export class SupabaseEventRepository implements EventRepository {
     const challenges = ordered(unwrap(challengesResult).map(mapChallengeRow));
     const categories = ordered(unwrap(categoriesResult).map(mapCategoryRow));
     const categoryIds = categories.map((category) => category.id);
+    const sessionRows = unwrap(sessionsResult);
+    const sessionRow = Array.isArray(sessionRows) ? sessionRows[0] : sessionRows;
+    const quizSession = sessionRow ? mapQuizSessionRow(sessionRow) : null;
     let questions: QuizQuestion[] = [];
     if (categoryIds.length > 0) {
       const questionsResult = await this.client
@@ -180,6 +200,7 @@ export class SupabaseEventRepository implements EventRepository {
         imageUrl: this.publicMediaUrl(category.imageUrl),
       })),
       questions,
+      quizSession,
     };
   }
 
@@ -324,6 +345,15 @@ export class SupabaseEventRepository implements EventRepository {
       p_keys: input.keys,
       p_source: input.source,
       p_idempotency_key: input.idempotencyKey,
+    }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async chooseQuizCategory(input: Parameters<EventRepository["chooseQuizCategory"]>[0]): Promise<void> {
+    const result = await this.client.rpc("choose_quiz_category", {
+      p_session_id: input.sessionId,
+      p_team_id: input.teamId,
+      p_category_id: input.categoryId,
     }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }

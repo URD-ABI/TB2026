@@ -1,4 +1,4 @@
-import type { Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, Team } from "../domain/types";
+import type { Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, Team } from "../domain/types";
 
 export type EventSnapshot = {
   event: EventConfig;
@@ -7,6 +7,7 @@ export type EventSnapshot = {
   challenges: Challenge[];
   categories: QuizCategory[];
   questions: QuizQuestion[];
+  quizSession: QuizSession | null;
 };
 
 export type Unsubscribe = () => void;
@@ -23,4 +24,5 @@ export interface EventRepository {
   updateTeam(team: Team): Promise<void>;
   revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }>;
   applyScore(input: { eventId: string; teamId: string; points: number; keys: number; source: string; idempotencyKey: string }): Promise<void>;
+  chooseQuizCategory(input: { eventId: string; sessionId: string; teamId: string; categoryId: string }): Promise<void>;
 }
