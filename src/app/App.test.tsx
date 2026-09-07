@@ -3,13 +3,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AppProviders } from "./AppProviders";
 import { MemoryEventRepository } from "../repositories/MemoryEventRepository";
 import { makeEvent, makeEventSnapshot } from "../test/fixtures";
+import type { Challenge } from "../domain/types";
 import { App } from "./App";
 
-function renderApp(path: string) {
+function renderApp(path: string, challenges: Challenge[] = []) {
   window.history.pushState({}, "", path);
   const repository = new MemoryEventRepository(
     makeEventSnapshot({
       event: makeEvent({ title: "Team Building 2026", subtitle: "Le tournoi des cinq équipes" }),
+      challenges,
     }),
     {},
   );
@@ -25,9 +27,18 @@ describe("App", () => {
   afterEach(() => window.history.pushState({}, "", "/"));
 
   it("respecte le basename GitHub Pages pour les routes publiques", async () => {
-    renderApp("/tb2026/defis");
+    renderApp("/tb2026/defis", [{
+      id: "challenge-route",
+      eventId: "event-1",
+      title: "Le défi venu du contexte",
+      kind: "Mystère",
+      description: "Cette carte prouve que la route utilise la mosaïque connectée.",
+      imageUrl: null,
+      displayOrder: 0,
+    }]);
 
-    expect(await screen.findByRole("heading", { name: "Défis" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Les cinq défis" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Le défi venu du contexte" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Attribution" })).toHaveAttribute("href", "/tb2026/attribution");
   });
 
