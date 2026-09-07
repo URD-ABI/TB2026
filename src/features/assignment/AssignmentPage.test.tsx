@@ -213,6 +213,50 @@ describe("AssignmentPage", () => {
     expect(portrait).not.toHaveClass("participant-token--new");
   });
 
+  it("avance localement lorsque la révélation réussit avant le prochain instantané temps réel", async () => {
+    const { repository } = renderAssignment();
+    const reveal = vi.spyOn(repository, "revealParticipant")
+      .mockResolvedValueOnce({ participantId: "participant-1", teamId: "team-e" })
+      .mockResolvedValueOnce({ participantId: "participant-2", teamId: "team-b" });
+    await flushInitialSnapshot();
+
+    fireEvent.click(screen.getByRole("button", { name: /lancer.*attribution/i }));
+    await finishCeremony();
+
+    const loups = screen.getByRole("article", { name: "Composition Loups des mers" });
+    expect(within(loups).getByRole("img", { name: "Alice Durand — Loups des mers" })).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /participant suivant/i }));
+    expect(screen.getByRole("heading", { name: "Benoît Leroy" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /lancer.*attribution/i }));
+    expect(reveal).toHaveBeenNthCalledWith(1, "event-1", "participant-1");
+    expect(reveal).toHaveBeenNthCalledWith(2, "event-1", "participant-2");
+  });
+
+  it("isole la scène et confine le focus dans le dialogue avant de le rendre au tirage suivant", async () => {
+    renderAssignment();
+    await flushInitialSnapshot();
+
+    fireEvent.click(screen.getByRole("button", { name: /lancer.*attribution/i }));
+    await finishCeremony();
+
+    const scene = screen.getByTestId("assignment-scene");
+    const dialog = screen.getByRole("dialog", { name: /attribution de Alice Durand/i });
+    const nextButton = within(dialog).getByRole("button", { name: /participant suivant/i });
+    expect(scene).toHaveAttribute("inert");
+    expect(nextButton).toHaveFocus();
+
+    fireEvent.keyDown(nextButton, { key: "Tab" });
+    expect(nextButton).toHaveFocus();
+    fireEvent.keyDown(nextButton, { key: "Tab", shiftKey: true });
+    expect(nextButton).toHaveFocus();
+
+    fireEvent.click(nextButton);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /lancer.*attribution/i })).toHaveFocus();
+  });
+
   it("affiche les initiales des participants sans image dans leur équipe", async () => {
     renderAssignment({
       participants: [

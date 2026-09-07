@@ -82,7 +82,20 @@ export function AssignmentPage() {
     () => [...snapshot.teams].sort((left, right) => left.displayOrder - right.displayOrder),
     [snapshot.teams],
   );
-  const currentParticipant = nextParticipant(snapshot.participants);
+  const [localReveals, setLocalReveals] = useState<Record<string, string>>({});
+  const participants = useMemo(
+    () => snapshot.participants.map((participant) => {
+      const localTeamId = localReveals[participant.id];
+      if (!localTeamId || participant.revealedAt !== null) return participant;
+      return {
+        ...participant,
+        revealedTeamId: localTeamId,
+        revealedAt: "local-confirmation",
+      };
+    }),
+    [localReveals, snapshot.participants],
+  );
+  const currentParticipant = nextParticipant(participants);
   const [ceremonyParticipant, setCeremonyParticipant] = useState<Participant | null>(null);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [visitedTeamIds, setVisitedTeamIds] = useState<Set<string>>(() => new Set());
@@ -94,6 +107,9 @@ export function AssignmentPage() {
   const busyRef = useRef(false);
   const mountedRef = useRef(true);
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const launchButtonRef = useRef<HTMLButtonElement>(null);
+  const nextButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreLaunchFocusRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -103,6 +119,21 @@ export function AssignmentPage() {
       timersRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    setLocalReveals({});
+  }, [snapshot.event.id]);
+
+  useEffect(() => {
+    if (result) {
+      nextButtonRef.current?.focus();
+      return;
+    }
+    if (restoreLaunchFocusRef.current) {
+      restoreLaunchFocusRef.current = false;
+      launchButtonRef.current?.focus();
+    }
+  }, [currentParticipant?.id, result]);
 
   const wait = (milliseconds: number) => new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
@@ -150,6 +181,11 @@ export function AssignmentPage() {
       return;
     }
 
+    setLocalReveals((reveals) => ({
+      ...reveals,
+      [currentParticipant.id]: outcome.value.teamId,
+    }));
+
     if (reducedMotion) {
       setVisitedTeamIds(new Set(teams.map((team) => team.id)));
     } else {
@@ -171,6 +207,7 @@ export function AssignmentPage() {
   }
 
   function showNextParticipant() {
+    restoreLaunchFocusRef.current = true;
     setResult(null);
     setActiveTeamId(null);
     setVisitedTeamIds(new Set());
@@ -189,41 +226,49 @@ export function AssignmentPage() {
   const displayedParticipant = ceremonyParticipant ?? currentParticipant;
   const resultTeam = result ? teams.find((team) => team.id === result.teamId) ?? null : null;
 
+  function keepFocusInDialog(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    nextButtonRef.current?.focus();
+  }
+
   return (
     <section className="assignment-page" aria-labelledby="assignment-title">
-      <header className="assignment-page__heading">
-        <p className="assignment-page__eyebrow">La cérémonie des emblèmes</p>
-        <h1 id="assignment-title">Attribution des équipes</h1>
-        <p>Chaque destin est déjà écrit. La roue va maintenant le révéler.</p>
-      </header>
+      <div className="assignment-page__scene" data-testid="assignment-scene" inert={result ? true : undefined}>
+        <header className="assignment-page__heading">
+          <p className="assignment-page__eyebrow">La cérémonie des emblèmes</p>
+          <h1 id="assignment-title">Attribution des équipes</h1>
+          <p>Chaque destin est déjà écrit. La roue va maintenant le révéler.</p>
+        </header>
 
-      <div className="assignment-stage">
-        <div className="assignment-stage__participant">
-          {displayedParticipant ? (
-            <>
-              <ParticipantPortrait participant={displayedParticipant} />
-              <h2>{displayedParticipant.name}</h2>
-              <button className="assignment-stage__button" type="button" disabled={busy || result !== null} onClick={launchReveal}>
-                {error ? "Réessayer" : busy ? "Les emblèmes délibèrent…" : "Lancer l’attribution"}
-              </button>
-            </>
-          ) : (
-            <p className="assignment-stage__complete" role="status">Tous les participants ont été attribués.</p>
-          )}
-          {error && <p className="assignment-stage__error" role="alert">{error}</p>}
+        <div className="assignment-stage">
+          <div className="assignment-stage__participant">
+            {displayedParticipant ? (
+              <>
+                <ParticipantPortrait participant={displayedParticipant} />
+                <h2>{displayedParticipant.name}</h2>
+                <button ref={launchButtonRef} className="assignment-stage__button" type="button" disabled={busy || result !== null} onClick={launchReveal}>
+                  {error ? "Réessayer" : busy ? "Les emblèmes délibèrent…" : "Lancer l’attribution"}
+                </button>
+              </>
+            ) : (
+              <p className="assignment-stage__complete" role="status">Tous les participants ont été attribués.</p>
+            )}
+            {error && <p className="assignment-stage__error" role="alert">{error}</p>}
+          </div>
+
+          <TeamReel
+            teams={teams}
+            activeTeamId={activeTeamId}
+            visitedTeamIds={visitedTeamIds}
+            reducedMotion={reducedMotion}
+          />
         </div>
-
-        <TeamReel
-          teams={teams}
-          activeTeamId={activeTeamId}
-          visitedTeamIds={visitedTeamIds}
-          reducedMotion={reducedMotion}
-        />
       </div>
 
       <section className="team-compositions" role="region" aria-label="Composition des équipes">
         {teams.map((team) => {
-          const members = snapshot.participants
+          const members = participants
             .filter((participant) => participant.revealedTeamId === team.id)
             .sort((left, right) => left.revealOrder - right.revealOrder);
           return (
@@ -252,7 +297,7 @@ export function AssignmentPage() {
       </section>
 
       {result && resultTeam && (
-        <div className="assignment-result-overlay" role="dialog" aria-modal="true" aria-label={`Attribution de ${result.participant.name}`}>
+        <div className="assignment-result-overlay" role="dialog" aria-modal="true" aria-label={`Attribution de ${result.participant.name}`} onKeyDown={keepFocusInDialog}>
           <div className="assignment-result-overlay__light" aria-hidden="true" />
           <div className="assignment-result-overlay__card" data-testid="assignment-result">
             <span className="assignment-result-overlay__emblem" aria-hidden="true">{resultTeam.emblem}</span>
@@ -260,7 +305,7 @@ export function AssignmentPage() {
             <p className="assignment-result-overlay__name">{result.participant.name}</p>
             <p className="assignment-result-overlay__joins">rejoint</p>
             <strong>{resultTeam.name}</strong>
-            <button type="button" onClick={showNextParticipant}>Participant suivant</button>
+            <button ref={nextButtonRef} type="button" onClick={showNextParticipant}>Participant suivant</button>
           </div>
         </div>
       )}
