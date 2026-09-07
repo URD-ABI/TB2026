@@ -173,6 +173,26 @@ describe("AssignmentPage", () => {
     expect(screen.getByRole("heading", { name: "Benoît Leroy" })).toBeInTheDocument();
   });
 
+  it("révèle le résultat dans un dialogue plein écran avant de présenter le participant suivant", async () => {
+    renderAssignment();
+    await flushInitialSnapshot();
+
+    fireEvent.click(screen.getByRole("button", { name: /lancer.*attribution/i }));
+    await finishCeremony();
+
+    const resultOverlay = screen.getByRole("dialog", { name: /attribution de Alice Durand/i });
+    expect(resultOverlay).toHaveAttribute("aria-modal", "true");
+    expect(resultOverlay).toHaveClass("assignment-result-overlay");
+    expect(within(resultOverlay).getByText("Alice Durand")).toBeInTheDocument();
+    expect(within(resultOverlay).getByText("Loups des mers")).toBeInTheDocument();
+    expect(within(resultOverlay).queryByText("Benoît Leroy")).not.toBeInTheDocument();
+
+    fireEvent.click(within(resultOverlay).getByRole("button", { name: /participant suivant/i }));
+
+    expect(screen.queryByRole("dialog", { name: /attribution de Alice Durand/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Benoît Leroy" })).toBeInTheDocument();
+  });
+
   it("affiche les initiales des participants sans image dans leur équipe", async () => {
     renderAssignment({
       participants: [

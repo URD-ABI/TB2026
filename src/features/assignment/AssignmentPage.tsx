@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEventContext } from "../../app/AppProviders";
-import { nextParticipant } from "../../domain/assignment";
+import { buildReelSequence, nextParticipant } from "../../domain/assignment";
 import type { Participant, Team } from "../../domain/types";
 import { TeamReel } from "./TeamReel";
 import "./assignment.css";
@@ -127,17 +127,6 @@ export function AssignmentPage() {
       .then((value) => ({ ok: true as const, value }))
       .catch((reason: unknown) => ({ ok: false as const, reason }));
 
-    if (reducedMotion) {
-      setVisitedTeamIds(new Set(teams.map((team) => team.id)));
-    } else {
-      for (const team of teams) {
-        await wait(110);
-        if (!mountedRef.current) return;
-        setActiveTeamId(team.id);
-        setVisitedTeamIds((visited) => new Set(visited).add(team.id));
-      }
-    }
-
     const outcome = await revealOutcome;
     if (!mountedRef.current) return;
 
@@ -159,14 +148,29 @@ export function AssignmentPage() {
       return;
     }
 
-    if (!reducedMotion) await wait(180);
-    if (!mountedRef.current) return;
+    if (reducedMotion) {
+      setVisitedTeamIds(new Set(teams.map((team) => team.id)));
+    } else {
+      const sequence = buildReelSequence(teams.map((team) => team.id), outcome.value.teamId);
+      for (const step of sequence) {
+        await wait(step.delayMs);
+        if (!mountedRef.current) return;
+        setActiveTeamId(step.teamId);
+        setVisitedTeamIds((visited) => new Set(visited).add(step.teamId));
+      }
+    }
 
     setActiveTeamId(outcome.value.teamId);
     setResult({ participant: currentParticipant, teamId: outcome.value.teamId });
     setCeremonyParticipant(null);
     busyRef.current = false;
     setBusy(false);
+  }
+
+  function showNextParticipant() {
+    setResult(null);
+    setActiveTeamId(null);
+    setVisitedTeamIds(new Set());
   }
 
   const displayedParticipant = ceremonyParticipant ?? currentParticipant;
@@ -186,7 +190,7 @@ export function AssignmentPage() {
             <>
               <ParticipantPortrait participant={displayedParticipant} />
               <h2>{displayedParticipant.name}</h2>
-              <button className="assignment-stage__button" type="button" disabled={busy} onClick={launchReveal}>
+              <button className="assignment-stage__button" type="button" disabled={busy || result !== null} onClick={launchReveal}>
                 {error ? "Réessayer" : busy ? "Les emblèmes délibèrent…" : "Lancer l’attribution"}
               </button>
             </>
@@ -194,13 +198,6 @@ export function AssignmentPage() {
             <p className="assignment-stage__complete" role="status">Tous les participants ont été attribués.</p>
           )}
           {error && <p className="assignment-stage__error" role="alert">{error}</p>}
-          {resultTeam && (
-            <div className="assignment-stage__result" data-testid="assignment-result" aria-live="polite">
-              <span aria-hidden="true">{resultTeam.emblem}</span>
-              <p>{result?.participant.name} rejoint</p>
-              <strong>{resultTeam.name}</strong>
-            </div>
-          )}
         </div>
 
         <TeamReel
@@ -240,6 +237,20 @@ export function AssignmentPage() {
           );
         })}
       </section>
+
+      {result && resultTeam && (
+        <div className="assignment-result-overlay" role="dialog" aria-modal="true" aria-label={`Attribution de ${result.participant.name}`}>
+          <div className="assignment-result-overlay__light" aria-hidden="true" />
+          <div className="assignment-result-overlay__card" data-testid="assignment-result">
+            <span className="assignment-result-overlay__emblem" aria-hidden="true">{resultTeam.emblem}</span>
+            <ParticipantPortrait participant={result.participant} className="assignment-result-overlay__portrait" />
+            <p className="assignment-result-overlay__name">{result.participant.name}</p>
+            <p className="assignment-result-overlay__joins">rejoint</p>
+            <strong>{resultTeam.name}</strong>
+            <button type="button" onClick={showNextParticipant}>Participant suivant</button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

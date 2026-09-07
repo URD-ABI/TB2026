@@ -115,26 +115,6 @@
   color: #ffd4ce;
 }
 
-.assignment-stage__result {
-  margin-top: 1rem;
-  color: var(--parchment-muted);
-}
-
-.assignment-stage__result span {
-  color: var(--brass-bright);
-  font-size: 1.75rem;
-}
-
-.assignment-stage__result p {
-  margin: 0.15rem 0;
-}
-
-.assignment-stage__result strong {
-  color: #fff8e8;
-  font-family: var(--font-display);
-  font-size: 1.45rem;
-}
-
 .team-reel {
   display: grid;
   padding: clamp(1.1rem, 2.5vw, 2rem);
@@ -248,6 +228,104 @@
   font-style: italic;
 }
 
+.assignment-result-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  overflow-y: auto;
+  padding: clamp(1rem, 4vw, 3rem);
+  place-items: center;
+  background: rgba(2, 9, 16, 0.92);
+  backdrop-filter: blur(18px);
+}
+
+.assignment-result-overlay__light {
+  position: fixed;
+  width: min(78vw, 58rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(213, 168, 77, 0.25), rgba(25, 92, 107, 0.13) 40%, transparent 70%);
+  pointer-events: none;
+}
+
+.assignment-result-overlay__card {
+  position: relative;
+  display: flex;
+  width: min(92vw, 38rem);
+  min-height: min(82vh, 42rem);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 5vw, 3rem);
+  border: 1px solid rgba(242, 210, 129, 0.68);
+  border-radius: 2rem;
+  color: var(--parchment-muted);
+  background: linear-gradient(155deg, rgba(22, 55, 70, 0.96), rgba(4, 15, 25, 0.98));
+  box-shadow: 0 0 70px rgba(213, 168, 77, 0.2), var(--shadow-deep);
+  text-align: center;
+  animation: reveal-overlay 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.assignment-result-overlay__emblem {
+  position: absolute;
+  top: 1.5rem;
+  color: var(--brass-bright);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  text-shadow: 0 0 24px currentColor;
+}
+
+.assignment-result-overlay__portrait {
+  width: clamp(8rem, 22vw, 13rem);
+}
+
+.assignment-result-overlay__name {
+  margin: 1rem 0 0;
+  color: #fff8e8;
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 4vw, 2.4rem);
+}
+
+.assignment-result-overlay__joins {
+  margin: 0.2rem 0;
+  font-style: italic;
+}
+
+.assignment-result-overlay strong {
+  color: var(--brass-bright);
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 6vw, 4rem);
+  line-height: 1.05;
+}
+
+.assignment-result-overlay button {
+  min-height: 48px;
+  margin-top: 1.6rem;
+  padding: 0.8rem 1.4rem;
+  border: 1px solid #f2d281;
+  border-radius: 999px;
+  color: #11202c;
+  background: linear-gradient(135deg, #f2d281, #c58d35);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.assignment-result-overlay button:focus-visible {
+  outline: 3px solid var(--frost);
+  outline-offset: 4px;
+}
+
+@keyframes reveal-overlay {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes participant-arrival {
   from {
     opacity: 0;
@@ -300,5 +378,9 @@
 
   .team-reel__team {
     transition: none;
+  }
+
+  .assignment-result-overlay__card {
+    animation: none;
   }
 }
