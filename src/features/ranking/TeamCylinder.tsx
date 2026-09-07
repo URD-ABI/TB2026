@@ -20,7 +20,9 @@ type TeamCylinderProps = {
 export function TeamCylinder({ entry, maximum }: TeamCylinderProps) {
   const { team, rank, requiresTieBreak } = entry;
   const ratio = maximum > 0 ? team.points / maximum : 0;
-  const fill = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+  const fill = team.points <= 0
+    ? 0
+    : Math.max(4, Math.min(100, Math.round(ratio * 100)));
   const nameId = `team-cylinder-${team.id}-name`;
   const style: CylinderStyle = {
     "--team-color": team.color,

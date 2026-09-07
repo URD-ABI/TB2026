@@ -182,6 +182,25 @@ describe("RankingPage", () => {
     }
   });
 
+  it("conserve au moins 4 % de sable pour tout score strictement positif", async () => {
+    renderRanking(fiveTeams([
+      { points: 1000 },
+      { points: 1 },
+      { points: 0 },
+      { points: -1 },
+      { points: 500 },
+    ]));
+
+    const cylinders = await screen.findAllByTestId("team-cylinder");
+    expect(cylinders.map((cylinder) => cylinder.style.getPropertyValue("--fill"))).toEqual([
+      "100%",
+      "4%",
+      "0%",
+      "0%",
+      "50%",
+    ]);
+  });
+
   it("reste lisible par les technologies d’assistance", async () => {
     renderRanking(fiveTeams());
 
