@@ -348,6 +348,77 @@ describe("SupabaseEventRepository", () => {
     expect(channel.subscribe).toHaveBeenCalledOnce();
   });
 
+  it("retente un reload temps réel échoué puis publie le snapshot sans nouvelle mutation", async () => {
+    vi.useFakeTimers();
+    const handlers: Array<() => void> = [];
+    const channel = {
+      on: vi.fn((_type: string, _filter: unknown, handler: () => void) => { handlers.push(handler); return channel; }),
+      subscribe: vi.fn(() => channel),
+    };
+    const client = { channel: vi.fn(() => channel), removeChannel: vi.fn() };
+    const repository = new SupabaseEventRepository(client as never);
+    const getSnapshot = vi.spyOn(repository, "getSnapshot")
+      .mockResolvedValueOnce(makeExpectedSnapshot("Initial"))
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(makeExpectedSnapshot("Après reprise"));
+    const received: string[] = [];
+    const statuses: string[] = [];
+
+    const unsubscribe = repository.subscribe(
+      "tournoi-des-arcanes",
+      (snapshot) => received.push(snapshot.teams[0].name),
+      (status) => statuses.push(status),
+    );
+    await vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalledOnce());
+    expect(received).toEqual(["Initial"]);
+
+    handlers[0]();
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.waitFor(() => expect(statuses).toContain("reconnecting"));
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    expect(received).toEqual(["Initial"]);
+
+    await vi.runOnlyPendingTimersAsync();
+    await vi.waitFor(() => expect(received).toEqual(["Initial", "Après reprise"]));
+    expect(getSnapshot).toHaveBeenCalledTimes(3);
+    unsubscribe();
+  });
+
+  it("annule le retry d'un reload temps réel lors de la désinscription", async () => {
+    vi.useFakeTimers();
+    const handlers: Array<() => void> = [];
+    const channel = {
+      on: vi.fn((_type: string, _filter: unknown, handler: () => void) => { handlers.push(handler); return channel; }),
+      subscribe: vi.fn(() => channel),
+    };
+    const removeChannel = vi.fn();
+    const client = { channel: vi.fn(() => channel), removeChannel };
+    const repository = new SupabaseEventRepository(client as never);
+    const getSnapshot = vi.spyOn(repository, "getSnapshot")
+      .mockResolvedValueOnce(makeExpectedSnapshot("Initial"))
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(makeExpectedSnapshot("Ne doit pas être publié"));
+    const received: string[] = [];
+    const statuses: string[] = [];
+
+    const unsubscribe = repository.subscribe(
+      "tournoi-des-arcanes",
+      (snapshot) => received.push(snapshot.teams[0].name),
+      (status) => statuses.push(status),
+    );
+    await vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalledOnce());
+    handlers[0]();
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.waitFor(() => expect(statuses).toContain("reconnecting"));
+
+    unsubscribe();
+    await vi.runAllTimersAsync();
+
+    expect(removeChannel).toHaveBeenCalledWith(channel);
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    expect(received).toEqual(["Initial"]);
+  });
+
   it("recharge après la confirmation SUBSCRIBED pour fermer la fenêtre d'abonnement", async () => {
     const channel = { on: vi.fn(() => channel), subscribe: vi.fn() };
     let statusHandler: ((status: string) => void) | undefined;

@@ -38,12 +38,6 @@ export function AppProviders({ repository, eventSlug, children }: AppProvidersPr
       acceptStatus,
     );
 
-    void repository.getSnapshot(eventSlug).then((firstSnapshot) => {
-      acceptSnapshot(firstSnapshot);
-    }).catch(() => {
-      acceptStatus("reconnecting");
-    });
-
     return () => {
       active = false;
       unsubscribe();

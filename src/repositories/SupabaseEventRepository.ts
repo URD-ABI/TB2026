@@ -191,6 +191,7 @@ export class SupabaseEventRepository implements EventRepository {
     let disposed = false;
     let reloadTimer: ReturnType<typeof setTimeout> | undefined;
     let bootstrapRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    let reloadRetryTimer: ReturnType<typeof setTimeout> | undefined;
     let channel: ReturnType<SupabaseClient["channel"]> | undefined;
     let reloadVersion = 0;
 
@@ -206,12 +207,27 @@ export class SupabaseEventRepository implements EventRepository {
       }
     };
 
+    const scheduleReloadRetry = (): void => {
+      if (disposed || reloadRetryTimer !== undefined) return;
+      reloadRetryTimer = setTimeout(async () => {
+        reloadRetryTimer = undefined;
+        const snapshot = await reload();
+        if (!snapshot) scheduleReloadRetry();
+      }, BOOTSTRAP_RETRY_DELAY_MS);
+    };
+
     const scheduleReload = (): void => {
       if (disposed) return;
       if (reloadTimer !== undefined) clearTimeout(reloadTimer);
+      if (reloadRetryTimer !== undefined) {
+        clearTimeout(reloadRetryTimer);
+        reloadRetryTimer = undefined;
+      }
       reloadTimer = setTimeout(() => {
         reloadTimer = undefined;
-        void reload();
+        void reload().then((snapshot) => {
+          if (!snapshot) scheduleReloadRetry();
+        });
       }, 50);
     };
 
@@ -257,6 +273,7 @@ export class SupabaseEventRepository implements EventRepository {
       disposed = true;
       if (reloadTimer !== undefined) clearTimeout(reloadTimer);
       if (bootstrapRetryTimer !== undefined) clearTimeout(bootstrapRetryTimer);
+      if (reloadRetryTimer !== undefined) clearTimeout(reloadRetryTimer);
       if (channel) void this.client.removeChannel(channel);
     };
   }

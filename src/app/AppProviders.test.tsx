@@ -51,34 +51,39 @@ function Probe() {
 }
 
 describe("AppProviders", () => {
-  it("s'abonne immédiatement et accepte un snapshot temps réel après l'échec du chargement initial", async () => {
-    const fake = makeRepository(Promise.reject(new Error("offline")));
+  it("utilise l'abonnement comme unique autorité de chargement initial", async () => {
+    const staleRequest = deferred<EventSnapshot>();
+    const fake = makeRepository(staleRequest.promise);
     render(<AppProviders repository={fake.repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
 
     expect(fake.repository.subscribe).toHaveBeenCalledOnce();
+    expect(fake.repository.getSnapshot).not.toHaveBeenCalled();
     expect(screen.getByRole("status", { name: /chargement de l'événement/i })).toBeInTheDocument();
 
     act(() => fake.emitSnapshot(makeEventSnapshot({ teams: [makeTeam({ name: "Phénix" })] })));
     expect(await screen.findByText("équipe:Phénix")).toBeInTheDocument();
+
+    await act(async () => staleRequest.resolve(makeEventSnapshot({ teams: [makeTeam({ name: "Ancienne" })] })));
+    expect(screen.getByText("équipe:Phénix")).toBeInTheDocument();
   });
 
   it("affiche un chargement accessible jusqu'au premier instantané", async () => {
-    const first = deferred<EventSnapshot>();
-    const { repository } = makeRepository(first.promise);
-    render(<AppProviders repository={repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
+    const fake = makeRepository(Promise.resolve(makeEventSnapshot()));
+    render(<AppProviders repository={fake.repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
 
     expect(screen.getByRole("status", { name: /chargement de l'événement/i })).toBeInTheDocument();
     expect(screen.queryByText(/dépôt:présent/i)).not.toBeInTheDocument();
 
-    await act(async () => first.resolve(makeEventSnapshot()));
+    act(() => fake.emitSnapshot(makeEventSnapshot()));
     expect(await screen.findByText("équipe:Équipe A")).toBeInTheDocument();
   });
 
   it("expose l'instantané, l'état réseau et le dépôt aux pages enfants", async () => {
     const snapshot = makeEventSnapshot({ teams: [makeTeam({ name: "Hiboux" })] });
-    const { repository } = makeRepository(Promise.resolve(snapshot));
-    render(<AppProviders repository={repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
+    const fake = makeRepository(Promise.resolve(snapshot));
+    render(<AppProviders repository={fake.repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
 
+    act(() => fake.emitSnapshot(snapshot));
     expect(await screen.findByText("équipe:Hiboux")).toBeInTheDocument();
     expect(screen.getByText("état:online")).toBeInTheDocument();
     expect(screen.getByText("dépôt:présent")).toBeInTheDocument();
@@ -88,6 +93,7 @@ describe("AppProviders", () => {
     const snapshot = makeEventSnapshot({ teams: [makeTeam({ name: "Hiboux" })] });
     const fake = makeRepository(Promise.resolve(snapshot));
     render(<AppProviders repository={fake.repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
+    act(() => fake.emitSnapshot(snapshot));
     expect(await screen.findByText("équipe:Hiboux")).toBeInTheDocument();
 
     act(() => fake.emitStatus("reconnecting"));
@@ -100,6 +106,7 @@ describe("AppProviders", () => {
   it("remplace l'instantané après une mise à jour temps réel", async () => {
     const fake = makeRepository(Promise.resolve(makeEventSnapshot()));
     render(<AppProviders repository={fake.repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
+    act(() => fake.emitSnapshot(makeEventSnapshot()));
     expect(await screen.findByText("équipe:Équipe A")).toBeInTheDocument();
 
     act(() => fake.emitSnapshot(makeEventSnapshot({ teams: [makeTeam({ name: "Dragons" })] })));
@@ -109,6 +116,7 @@ describe("AppProviders", () => {
   it("désabonne le temps réel au démontage", async () => {
     const fake = makeRepository(Promise.resolve(makeEventSnapshot()));
     const view = render(<AppProviders repository={fake.repository} eventSlug="tournoi-des-arcanes"><Probe /></AppProviders>);
+    act(() => fake.emitSnapshot(makeEventSnapshot()));
     expect(await screen.findByText("équipe:Équipe A")).toBeInTheDocument();
 
     view.unmount();
