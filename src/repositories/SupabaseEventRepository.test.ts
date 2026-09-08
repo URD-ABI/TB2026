@@ -289,6 +289,46 @@ describe("SupabaseEventRepository", () => {
     });
   });
 
+  it("crée et modifie participant et affectation avec les RPC transactionnelles", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: "participant-1", error: null });
+    const repository = new SupabaseEventRepository({ rpc } as never);
+
+    await repository.createParticipant({
+      eventId: "event-1",
+      name: "Chloé",
+      photoUrl: "event-1/participants/chloe.webp",
+      assignedTeamId: "team-2",
+      revealOrder: 3,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(1, "create_participant", {
+      p_event_id: "event-1",
+      p_participant_id: expect.any(String),
+      p_name: "Chloé",
+      p_photo_path: "event-1/participants/chloe.webp",
+      p_team_id: "team-2",
+      p_reveal_order: 3,
+    });
+
+    rpc.mockResolvedValueOnce({ data: null, error: null });
+    await repository.updateParticipant({
+      id: "participant-1",
+      eventId: "event-1",
+      name: "Chloé Martin",
+      photoUrl: "event-1/participants/participant-1.webp",
+      assignedTeamId: "team-3",
+      revealOrder: 3,
+      revealedAt: null,
+      revealedTeamId: null,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "update_participant", {
+      p_event_id: "event-1",
+      p_participant_id: "participant-1",
+      p_name: "Chloé Martin",
+      p_photo_path: "event-1/participants/participant-1.webp",
+      p_team_id: "team-3",
+    });
+  });
+
   it("regroupe les changements rapides, signale la reconnexion puis se désabonne", async () => {
     vi.useFakeTimers();
     const query = makeSnapshotClient();

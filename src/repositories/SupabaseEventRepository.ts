@@ -348,35 +348,26 @@ export class SupabaseEventRepository implements EventRepository {
 
   async createParticipant(input: CreateParticipantInput): Promise<void> {
     const participantId = crypto.randomUUID();
-    const participantResult = await this.client.from("participants").insert({
-      id: participantId,
-      event_id: input.eventId,
-      name: input.name,
-      photo_path: storagePath(input.photoUrl),
-      reveal_order: input.revealOrder,
+    const result = await this.client.rpc("create_participant", {
+      p_event_id: input.eventId,
+      p_participant_id: participantId,
+      p_name: input.name,
+      p_photo_path: storagePath(input.photoUrl),
+      p_team_id: input.assignedTeamId,
+      p_reveal_order: input.revealOrder,
     }) as QueryResult<unknown>;
-    if (participantResult.error) throw new Error(participantResult.error.message);
-    const assignmentResult = await this.client.from("participant_assignments").insert({
-      participant_id: participantId,
-      team_id: input.assignedTeamId,
-    }) as QueryResult<unknown>;
-    if (assignmentResult.error) {
-      await this.client.from("participants").delete().eq("id", participantId).eq("event_id", input.eventId);
-      throw new Error(assignmentResult.error.message);
-    }
+    if (result.error) throw new Error(result.error.message);
   }
 
   async updateParticipant(participant: AdminParticipant): Promise<void> {
-    const participantResult = await this.client.from("participants").update({
-      name: participant.name,
-      photo_path: storagePath(participant.photoUrl),
-    }).eq("id", participant.id).eq("event_id", participant.eventId) as QueryResult<unknown>;
-    if (participantResult.error) throw new Error(participantResult.error.message);
-    const assignmentResult = await this.client.from("participant_assignments").upsert({
-      participant_id: participant.id,
-      team_id: participant.assignedTeamId,
-    }, { onConflict: "participant_id" }) as QueryResult<unknown>;
-    if (assignmentResult.error) throw new Error(assignmentResult.error.message);
+    const result = await this.client.rpc("update_participant", {
+      p_event_id: participant.eventId,
+      p_participant_id: participant.id,
+      p_name: participant.name,
+      p_photo_path: storagePath(participant.photoUrl),
+      p_team_id: participant.assignedTeamId,
+    }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
   }
 
   async deleteParticipant(eventId: string, participantId: string): Promise<void> {

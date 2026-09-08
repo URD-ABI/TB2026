@@ -47,12 +47,12 @@ describe("TeamsEditor", () => {
     expect(onSaveTeam).not.toHaveBeenCalled();
   });
 
-  it("propose un ordre manuel uniquement aux équipes encore ex æquo", async () => {
+  it("permet d'ordonner entièrement un groupe d'au moins trois équipes ex æquo", async () => {
     const user = userEvent.setup();
     const tiedTeams = teams.map((team, index) => ({
       ...team,
-      points: index < 2 ? 50 : 40 - index,
-      keys: index < 2 ? 3 : 1,
+      points: index < 3 ? 50 : 40 - index,
+      keys: index < 3 ? 3 : 1,
     }));
     const onSaveTieBreak = vi.fn().mockResolvedValue(undefined);
     render(<TeamsEditor teams={tiedTeams} onSaveTeam={vi.fn()} applyScore={vi.fn()} onSaveTieBreak={onSaveTieBreak} />);
@@ -60,10 +60,29 @@ describe("TeamsEditor", () => {
     const panel = screen.getByRole("group", { name: /départage/i });
     expect(within(panel).getByText("Équipe 1")).toBeInTheDocument();
     expect(within(panel).getByText("Équipe 2")).toBeInTheDocument();
-    expect(within(panel).queryByText("Équipe 3")).not.toBeInTheDocument();
-    await user.selectOptions(within(panel).getByRole("combobox", { name: /première.*ex æquo/i }), "team-2");
+    expect(within(panel).getByText("Équipe 3")).toBeInTheDocument();
+    expect(within(panel).queryByText("Équipe 4")).not.toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: /monter équipe 3/i }));
     await user.click(within(panel).getByRole("button", { name: /enregistrer le départage/i }));
 
-    expect(onSaveTieBreak).toHaveBeenCalledWith("event-1", ["team-2", "team-1"]);
+    expect(onSaveTieBreak).toHaveBeenCalledWith("event-1", ["team-1", "team-3", "team-2"]);
+  });
+
+  it("affiche et enregistre séparément plusieurs groupes ex æquo", async () => {
+    const user = userEvent.setup();
+    const tiedTeams = teams.map((team, index) => ({
+      ...team,
+      points: index < 2 ? 50 : 30,
+      keys: index < 2 ? 3 : 1,
+    }));
+    const onSaveTieBreak = vi.fn().mockResolvedValue(undefined);
+    render(<TeamsEditor teams={tiedTeams} onSaveTeam={vi.fn()} applyScore={vi.fn()} onSaveTieBreak={onSaveTieBreak} />);
+
+    const panels = screen.getAllByRole("group", { name: /départage/i });
+    expect(panels).toHaveLength(2);
+    await user.click(within(panels[1]).getByRole("button", { name: /monter équipe 5/i }));
+    await user.click(within(panels[1]).getByRole("button", { name: /enregistrer le départage/i }));
+
+    expect(onSaveTieBreak).toHaveBeenCalledWith("event-1", ["team-3", "team-5", "team-4"]);
   });
 });

@@ -1,6 +1,6 @@
 begin;
 
-select plan(215);
+select plan(240);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -347,11 +347,23 @@ select is((select status from public.quiz_categories where id = '94000000-0000-0
 select has_function('public', 'reorder_participants', array['uuid', 'uuid[]']::text[], 'participant reorder has the required signature');
 select has_function('public', 'reset_participant_reveals', array['uuid']::text[], 'participant reveal reset has the required signature');
 select has_function('public', 'set_team_tie_break_order', array['uuid', 'uuid[]']::text[], 'manual tie-break order has the required signature');
+select has_function('public', 'create_participant', array['uuid', 'uuid', 'text', 'text', 'uuid', 'integer']::text[], 'transactional participant creation has the required signature');
+select has_function('public', 'update_participant', array['uuid', 'uuid', 'text', 'text', 'uuid']::text[], 'transactional participant update has the required signature');
+
+insert into public.events (id, slug, title) values
+  ('12222222-2222-2222-2222-222222222222', 'other-admin-event', 'Other admin event');
+insert into public.teams (id, event_id, name, color, display_order, points, keys) values
+  ('20000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'East', '#335577', 2, 40, 1),
+  ('20000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'West', '#557799', 3, 40, 1),
+  ('20000000-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'Center', '#7799bb', 4, 40, 1),
+  ('29999999-9999-9999-9999-999999999999', '12222222-2222-2222-2222-222222222222', 'Outside', '#775533', 0, 0, 0);
 
 set local role anon;
 select throws_ok($$select public.reorder_participants('11111111-1111-1111-1111-111111111111', array['30000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000001']::uuid[])$$, '42501', null, 'anon cannot reorder participants');
 select throws_ok($$select public.reset_participant_reveals('11111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot reset participant reveals');
 select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001']::uuid[])$$, '42501', null, 'anon cannot set a tie-break order');
+select throws_ok($$select public.create_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Blocked', null, '20000000-0000-0000-0000-000000000001', 3)$$, '42501', null, 'anon cannot create a participant assignment');
+select throws_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001', 'Blocked', null, '20000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot update a participant assignment');
 reset role;
 
 set local role authenticated;
@@ -370,11 +382,56 @@ select is((select team_id from public.participant_assignments where participant_
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.create_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Chloe', '11111111-1111-1111-1111-111111111111/participants/chloe.webp', '20000000-0000-0000-0000-000000000002', 3)$$, 'admin creates participant and assignment atomically');
+reset role;
+select is((select name from public.participants where id = '30000000-0000-0000-0000-000000000010'), 'Chloe', 'transactional creation stores the participant');
+select is((select photo_path from public.participants where id = '30000000-0000-0000-0000-000000000010'), '11111111-1111-1111-1111-111111111111/participants/chloe.webp', 'transactional creation stores an event-scoped photo path');
+select is((select team_id from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), '20000000-0000-0000-0000-000000000002'::uuid, 'transactional creation stores the hidden assignment');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select throws_ok($$select public.create_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000011', 'Cross event', null, '29999999-9999-9999-9999-999999999999', 4)$$, 'P0001', 'team_event_mismatch', 'creation rejects a team from another event');
+reset role;
+select is((select count(*) from public.participants where id = '30000000-0000-0000-0000-000000000011'), 0::bigint, 'failed creation leaves no partial participant row');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Chloe Martin', null, '20000000-0000-0000-0000-000000000003')$$, 'admin updates participant and assignment atomically');
+reset role;
+select is((select name from public.participants where id = '30000000-0000-0000-0000-000000000010'), 'Chloe Martin', 'transactional update stores participant fields');
+select is((select team_id from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), '20000000-0000-0000-0000-000000000003'::uuid, 'transactional update changes the hidden assignment');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select throws_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Should rollback', null, '29999999-9999-9999-9999-999999999999')$$, 'P0001', 'team_event_mismatch', 'update rejects a team from another event');
+reset role;
+select is((select name from public.participants where id = '30000000-0000-0000-0000-000000000010'), 'Chloe Martin', 'failed update rolls back participant fields');
+select is((select team_id from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), '20000000-0000-0000-0000-000000000003'::uuid, 'failed update preserves the previous assignment');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
 update public.teams set points = 50, keys = 3 where id in ('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002');
 select lives_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001']::uuid[])$$, 'admin stores a manual order for tied teams');
 reset role;
 select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000002'), 1, 'manual tie-break winner receives priority one');
 select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000001'), 2, 'manual tie-break runner-up receives priority two');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000005','20000000-0000-0000-0000-000000000003']::uuid[])$$, 'admin stores a second independent tie-break group');
+reset role;
+select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000002'), 1, 'saving another group preserves the first group winner');
+select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000001'), 2, 'saving another group preserves the first group runner-up');
+select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000004'), 1, 'second group winner receives its group-local priority one');
+select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000005'), 2, 'second group runner-up receives its group-local priority two');
+select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000003'), 3, 'second group third place receives its group-local priority three');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000004']::uuid[])$$, 'P0001', 'invalid_tie_break_order', 'tie-break requires the complete tied group');
+select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001']::uuid[])$$, 'P0001', 'invalid_tie_break_order', 'tie-break rejects duplicate teams');
+select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000001','29999999-9999-9999-9999-999999999999']::uuid[])$$, 'P0001', 'invalid_tie_break_order', 'tie-break rejects a team from another event');
+reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);

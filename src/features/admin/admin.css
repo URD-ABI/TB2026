@@ -209,6 +209,19 @@
   background: rgb(255 255 255 / 4%);
 }
 
+.admin-tie-break__order {
+  display: grid;
+  gap: 0.55rem;
+  padding-left: 1.8rem;
+}
+
+.admin-tie-break__order li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .admin-team-card legend,
 .admin-participant-card legend,
 .admin-tie-break legend {

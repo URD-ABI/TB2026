@@ -70,23 +70,53 @@ export function TeamsEditor({ teams, onSaveTeam, applyScore, onSaveTieBreak }: T
 }
 
 function TieBreakPanel({ teams, onSave }: { teams: Team[]; onSave: TeamsEditorProps["onSaveTieBreak"] }) {
-  const [firstId, setFirstId] = useState(teams[0].id);
+  const [order, setOrder] = useState(() => initialTieBreakOrder(teams));
   const save = useSaveState();
-  const order = [firstId, ...teams.map((team) => team.id).filter((id) => id !== firstId)];
+  useEffect(() => setOrder(initialTieBreakOrder(teams)), [teams]);
+
+  const move = (index: number, direction: -1 | 1) => {
+    const destination = index + direction;
+    if (destination < 0 || destination >= order.length) return;
+    setOrder((current) => {
+      const reordered = [...current];
+      [reordered[index], reordered[destination]] = [reordered[destination], reordered[index]];
+      return reordered;
+    });
+  };
+
   return (
     <fieldset className="admin-tie-break">
       <legend>Départage requis</legend>
-      <p>{teams.map((team) => team.name).join(" · ")}</p>
-      <label>
-        Première équipe ex æquo
-        <select value={firstId} onChange={(event) => setFirstId(event.target.value)}>
-          {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-        </select>
-      </label>
+      <p>Classez toutes les équipes de ce groupe selon l’épreuve de départage.</p>
+      <ol className="admin-tie-break__order">
+        {order.map((teamId, index) => {
+          const team = teams.find((item) => item.id === teamId)!;
+          return (
+            <li key={team.id}>
+              <span>{team.name}</span>
+              <button type="button" disabled={index === 0} aria-label={`Monter ${team.name}`} onClick={() => move(index, -1)}>↑</button>
+              <button type="button" disabled={index === order.length - 1} aria-label={`Descendre ${team.name}`} onClick={() => move(index, 1)}>↓</button>
+            </li>
+          );
+        })}
+      </ol>
       <button type="button" disabled={save.state === "saving"} onClick={() => void save.run(() => onSave(teams[0].eventId, order))}>
         Enregistrer le départage
       </button>
       {save.state === "error" ? <p className="admin-alert" role="alert">Enregistrement impossible. Réessayez.</p> : null}
     </fieldset>
   );
+}
+
+function initialTieBreakOrder(teams: Team[]): string[] {
+  return [...teams]
+    .sort((left, right) => {
+      if (left.tieBreakPriority !== null && right.tieBreakPriority !== null) {
+        return left.tieBreakPriority - right.tieBreakPriority;
+      }
+      if (left.tieBreakPriority !== null) return -1;
+      if (right.tieBreakPriority !== null) return 1;
+      return left.displayOrder - right.displayOrder;
+    })
+    .map((team) => team.id);
 }
