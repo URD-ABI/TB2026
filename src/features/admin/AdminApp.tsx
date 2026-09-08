@@ -25,11 +25,17 @@ export function AdminApp({ auth = supabase as unknown as AdminClient }: AdminApp
     return (
       <LoginPage
         pending={session.signInPending}
-        error={session.error}
+        error={session.error === "signout" ? null : session.error}
         onSignIn={session.signIn}
       />
     );
   }
 
-  return <AdminLayout onSignOut={session.signOut} />;
+  return (
+    <AdminLayout
+      onSignOut={session.signOut}
+      signOutPending={session.signOutPending}
+      signOutError={session.error === "signout"}
+    />
+  );
 }

@@ -95,6 +95,15 @@
   background: transparent;
 }
 
+.admin-sign-out:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.admin-shell__alert {
+  margin: 1rem clamp(1rem, 4vw, 3rem) 0;
+}
+
 .admin-navigation {
   display: flex;
   gap: 0.55rem;

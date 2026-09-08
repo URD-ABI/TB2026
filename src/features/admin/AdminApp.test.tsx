@@ -19,6 +19,7 @@ function makeAdminClient(options: {
   session?: Session | null;
   isAdmin?: boolean;
   signInError?: { message: string } | null;
+  signOutError?: { message: string } | null;
 } = {}) {
   let authListener: ((event: string, session: Session | null) => void) | undefined;
   const unsubscribe = vi.fn();
@@ -37,7 +38,7 @@ function makeAdminClient(options: {
     data: { session: null, user: null },
     error: options.signInError ?? null,
   });
-  const signOut = vi.fn().mockResolvedValue({ error: null });
+  const signOut = vi.fn().mockResolvedValue({ error: options.signOutError ?? null });
   const onAuthStateChange = vi.fn((listener) => {
     authListener = listener;
     return { data: { subscription: { unsubscribe } } };
@@ -164,5 +165,66 @@ describe("AdminApp", () => {
 
     await user.click(await screen.findByRole("button", { name: /se déconnecter/i }));
     expect(fake.spies.signOut).toHaveBeenCalledOnce();
+  });
+
+  it("conserve la session et affiche une erreur générique si Supabase refuse la déconnexion", async () => {
+    const user = userEvent.setup();
+    const pending = deferred<{ error: { message: string } }>();
+    const fake = makeAdminClient({ session: { user: { id: "admin-1" } } });
+    fake.spies.signOut.mockReturnValueOnce(pending.promise);
+    renderAdmin(fake.client);
+
+    await user.click(await screen.findByRole("button", { name: /se déconnecter/i }));
+
+    expect(screen.getByRole("button", { name: /déconnexion en cours/i })).toBeDisabled();
+    expect(screen.getByRole("navigation", { name: /administration/i })).toBeInTheDocument();
+
+    await act(async () => pending.resolve({ error: { message: "Network request failed for admin-1" } }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/déconnexion impossible/i);
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/network request failed|admin-1/i);
+    expect(screen.getByRole("navigation", { name: /administration/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /se déconnecter/i })).toBeEnabled();
+  });
+
+  it("revérifie silencieusement un jeton rafraîchi sans démonter l'interface admin", async () => {
+    const refreshedLookup = deferred<{ data: { user_id: string }; error: null }>();
+    const fake = makeAdminClient({ session: { user: { id: "admin-1" } } });
+    renderAdmin(fake.client);
+
+    const navigation = await screen.findByRole("navigation", { name: /administration/i });
+    fake.spies.maybeSingle.mockReturnValueOnce(refreshedLookup.promise);
+
+    act(() => fake.emitAuth("TOKEN_REFRESHED", { user: { id: "admin-1" } }));
+
+    expect(screen.getByRole("navigation", { name: /administration/i })).toBe(navigation);
+    expect(screen.queryByRole("status", { name: /vérification de l’accès administrateur/i })).not.toBeInTheDocument();
+
+    await act(async () => refreshedLookup.resolve({ data: { user_id: "admin-1" }, error: null }));
+    expect(screen.getByRole("navigation", { name: /administration/i })).toBe(navigation);
+    expect(fake.spies.maybeSingle).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignore une résolution getSession issue d'un effet remplacé", async () => {
+    const staleSession = deferred<{ data: { session: null }; error: null }>();
+    const activeLookup = deferred<{ data: { user_id: string }; error: null }>();
+    const stale = makeAdminClient();
+    stale.spies.getSession.mockReturnValueOnce(staleSession.promise);
+    const active = makeAdminClient({ session: { user: { id: "admin-1" } } });
+    active.spies.maybeSingle.mockReturnValueOnce(activeLookup.promise);
+
+    const view = renderAdmin(stale.client);
+    view.rerender(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <AdminApp auth={active.client} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(active.spies.maybeSingle).toHaveBeenCalledOnce());
+
+    await act(async () => staleSession.resolve({ data: { session: null }, error: null }));
+    await act(async () => activeLookup.resolve({ data: { user_id: "admin-1" }, error: null }));
+
+    expect(await screen.findByRole("navigation", { name: /administration/i })).toBeInTheDocument();
+    expect(active.spies.signOut).not.toHaveBeenCalled();
   });
 });

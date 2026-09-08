@@ -36,7 +36,8 @@ export type AdminSessionState = {
   user: User | null;
   isAdmin: boolean;
   signInPending: boolean;
-  error: "login" | "access" | null;
+  signOutPending: boolean;
+  error: "login" | "access" | "signout" | null;
   signIn(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
 };
@@ -46,22 +47,27 @@ export function useAdminSession(client: AdminClient): AdminSessionState {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [signInPending, setSignInPending] = useState(false);
-  const [error, setError] = useState<"login" | "access" | null>(null);
+  const [signOutPending, setSignOutPending] = useState(false);
+  const [error, setError] = useState<"login" | "access" | "signout" | null>(null);
   const verificationId = useRef(0);
+  const authorizedUserId = useRef<string | null>(null);
 
   const verifySession = useCallback(async (session: Session | null, active: () => boolean) => {
+    if (!active()) return;
     const currentVerification = ++verificationId.current;
     const canUpdate = () => active() && currentVerification === verificationId.current;
-    setLoading(true);
 
     if (!session) {
       if (canUpdate()) {
+        authorizedUserId.current = null;
         setUser(null);
         setIsAdmin(false);
         setLoading(false);
       }
       return;
     }
+
+    if (authorizedUserId.current !== session.user.id) setLoading(true);
 
     const { data, error: lookupError } = await client
       .from("admin_users")
@@ -72,6 +78,7 @@ export function useAdminSession(client: AdminClient): AdminSessionState {
     if (!canUpdate()) return;
 
     if (lookupError || data?.user_id !== session.user.id) {
+      authorizedUserId.current = null;
       setUser(null);
       setIsAdmin(false);
       setError("access");
@@ -80,6 +87,7 @@ export function useAdminSession(client: AdminClient): AdminSessionState {
       return;
     }
 
+    authorizedUserId.current = session.user.id;
     setUser(session.user);
     setIsAdmin(true);
     setError(null);
@@ -94,6 +102,7 @@ export function useAdminSession(client: AdminClient): AdminSessionState {
     });
 
     void client.auth.getSession().then(({ data }) => {
+      if (!active) return;
       void verifySession(data.session, isActive);
     }).catch(() => {
       if (!active) return;
@@ -124,16 +133,27 @@ export function useAdminSession(client: AdminClient): AdminSessionState {
   }, [client]);
 
   const signOut = useCallback(async () => {
+    setSignOutPending(true);
+    setError(null);
     try {
-      await client.auth.signOut();
-    } finally {
+      const { error: signOutError } = await client.auth.signOut();
+      if (signOutError) {
+        setError("signout");
+        return;
+      }
+
       verificationId.current += 1;
+      authorizedUserId.current = null;
       setUser(null);
       setIsAdmin(false);
       setError(null);
       setLoading(false);
+    } catch {
+      setError("signout");
+    } finally {
+      setSignOutPending(false);
     }
   }, [client]);
 
-  return { loading, user, isAdmin, signInPending, error, signIn, signOut };
+  return { loading, user, isAdmin, signInPending, signOutPending, error, signIn, signOut };
 }

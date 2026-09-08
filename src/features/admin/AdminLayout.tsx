@@ -2,6 +2,8 @@ import { NavLink } from "react-router-dom";
 
 type AdminLayoutProps = {
   onSignOut(): Promise<void>;
+  signOutPending: boolean;
+  signOutError: boolean;
 };
 
 const sections = [
@@ -12,7 +14,7 @@ const sections = [
   { label: "Quiz", to: "/admin/quiz" },
 ] as const;
 
-export function AdminLayout({ onSignOut }: AdminLayoutProps) {
+export function AdminLayout({ onSignOut, signOutPending, signOutError }: AdminLayoutProps) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
@@ -20,10 +22,21 @@ export function AdminLayout({ onSignOut }: AdminLayoutProps) {
           <p className="admin-eyebrow">Espace organisateur</p>
           <h1>Administration</h1>
         </div>
-        <button className="admin-sign-out" type="button" onClick={() => void onSignOut()}>
-          Se déconnecter
+        <button
+          className="admin-sign-out"
+          type="button"
+          disabled={signOutPending}
+          onClick={() => void onSignOut()}
+        >
+          {signOutPending ? "Déconnexion en cours…" : "Se déconnecter"}
         </button>
       </header>
+
+      {signOutError ? (
+        <p className="admin-alert admin-shell__alert" role="alert">
+          Déconnexion impossible. Réessayez.
+        </p>
+      ) : null}
 
       <nav className="admin-navigation" aria-label="Administration">
         {sections.map((section) => (
