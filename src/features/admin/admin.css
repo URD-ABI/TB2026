@@ -1,0 +1,128 @@
+.admin-loading,
+.admin-login,
+.admin-shell {
+  min-height: 100vh;
+  color: #f7efd7;
+  background:
+    radial-gradient(circle at 15% 10%, rgb(42 100 105 / 35%), transparent 34rem),
+    linear-gradient(145deg, #08191e, #101b27 55%, #1b1420);
+}
+
+.admin-loading,
+.admin-login {
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.admin-login__card {
+  width: min(100%, 28rem);
+  padding: clamp(1.5rem, 5vw, 2.5rem);
+  border: 1px solid rgb(220 183 92 / 38%);
+  border-radius: 1.25rem;
+  background: rgb(7 19 24 / 88%);
+  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 40%);
+}
+
+.admin-eyebrow {
+  margin: 0 0 0.4rem;
+  color: #ddb75c;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.admin-login__card h1,
+.admin-header h1 {
+  margin: 0;
+}
+
+.admin-login__intro {
+  color: #c8ced0;
+}
+
+.admin-alert {
+  padding: 0.8rem 1rem;
+  border-left: 3px solid #e0b34f;
+  background: rgb(224 179 79 / 12%);
+}
+
+.admin-login__form {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1.5rem;
+}
+
+.admin-login__form input {
+  min-height: 2.8rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgb(247 239 215 / 30%);
+  border-radius: 0.55rem;
+  color: inherit;
+  background: rgb(255 255 255 / 7%);
+}
+
+.admin-login__form button,
+.admin-sign-out {
+  min-height: 2.8rem;
+  margin-top: 0.6rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid #ddb75c;
+  border-radius: 999px;
+  color: #151b1b;
+  font-weight: 800;
+  background: #ddb75c;
+  cursor: pointer;
+}
+
+.admin-login__form button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem);
+  border-bottom: 1px solid rgb(255 255 255 / 12%);
+}
+
+.admin-sign-out {
+  color: #f7efd7;
+  background: transparent;
+}
+
+.admin-navigation {
+  display: flex;
+  gap: 0.55rem;
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  overflow-x: auto;
+}
+
+.admin-navigation__link {
+  flex: 0 0 auto;
+  padding: 0.65rem 0.9rem;
+  border-radius: 999px;
+  color: #c8ced0;
+  text-decoration: none;
+}
+
+.admin-navigation__link:hover,
+.admin-navigation__link.is-active {
+  color: #11191b;
+  background: #f0d38d;
+}
+
+.admin-content {
+  padding: 1rem clamp(1rem, 4vw, 3rem) 3rem;
+}
+
+@media (max-width: 40rem) {
+  .admin-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

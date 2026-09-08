@@ -4,28 +4,19 @@ import { AssignmentPage } from "../features/assignment/AssignmentPage";
 import { ChallengesPage } from "../features/challenges/ChallengesPage";
 import { RankingPage } from "../features/ranking/RankingPage";
 import { QuizPage } from "../features/quiz/QuizPage";
+import { AdminApp } from "../features/admin/AdminApp";
+import type { AdminClient } from "../features/admin/useAdminSession";
 
 type AppProps = {
   basename?: string;
+  adminAuth?: AdminClient;
 };
 
-function AdminPlaceholder() {
-  return (
-    <main className="admin-page">
-      <section className="admin-placeholder" aria-labelledby="admin-title">
-        <p className="event-header__eyebrow">Espace organisateur</p>
-        <h1 id="admin-title">Administration</h1>
-        <p>Les commandes du tournoi seront réunies ici.</p>
-      </section>
-    </main>
-  );
-}
-
-export function App({ basename = import.meta.env.BASE_URL }: AppProps) {
+export function App({ basename = import.meta.env.BASE_URL, adminAuth }: AppProps) {
   return (
     <BrowserRouter basename={basename}>
       <Routes>
-        <Route path="/admin/*" element={<AdminPlaceholder />} />
+        <Route path="/admin/*" element={<AdminApp auth={adminAuth} />} />
         <Route element={<PublicLayout />}>
           <Route index element={<RankingPage />} />
           <Route path="attribution" element={<AssignmentPage />} />
