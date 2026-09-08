@@ -1,5 +1,6 @@
 import type { QuizCategory } from "../../domain/types";
 import type { CSSProperties } from "react";
+import { toSafeCssBackground } from "../../lib/cssBackground";
 
 type CategoryGridProps = {
   categories: QuizCategory[];
@@ -15,12 +16,13 @@ export function CategoryGrid({ categories, disabled, pendingCategoryId, onChoose
         .slice()
         .sort((left, right) => left.displayOrder - right.displayOrder)
         .slice(0, 6)
-        .map((category, index) => (
-          <article
-            className={`quiz-category${category.imageUrl ? "" : " quiz-category--fallback"}`}
+        .map((category, index) => {
+          const background = toSafeCssBackground(category.imageUrl);
+          return <article
+            className={`quiz-category${background ? "" : " quiz-category--fallback"}`}
             data-testid="quiz-category"
             key={category.id}
-            style={{ "--quiz-category-image": category.imageUrl ? `url("${category.imageUrl}")` : "" } as CSSProperties}
+            style={background ? { "--quiz-category-image": background } as CSSProperties : undefined}
           >
             <span className="quiz-category__number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
             <button
@@ -35,8 +37,8 @@ export function CategoryGrid({ categories, disabled, pendingCategoryId, onChoose
                 ? <small>Thème déjà choisi</small>
                 : <small>Choisir ce thème</small>}
             </button>
-          </article>
-        ))}
+          </article>;
+        })}
     </section>
   );
 }

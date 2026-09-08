@@ -26,6 +26,12 @@ export function rankTeams(teams: Team[]): RankedTeam[] {
     .map((team) => ({
       team,
       rank: rankById.get(team.id) ?? 0,
-      requiresTieBreak: teams.some((other) => other.id !== team.id && other.points === team.points && other.keys === team.keys && team.tieBreakPriority === null && other.tieBreakPriority === null),
+      requiresTieBreak: (() => {
+        const tiedGroup = teams.filter((other) => other.points === team.points && other.keys === team.keys);
+        if (tiedGroup.length < 2) return false;
+        const priorities = tiedGroup.map((entry) => entry.tieBreakPriority);
+        return priorities.some((priority) => priority === null)
+          || new Set(priorities).size !== priorities.length;
+      })(),
     }));
 }

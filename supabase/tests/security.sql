@@ -1,6 +1,6 @@
 begin;
 
-select plan(196);
+select plan(198);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -234,6 +234,7 @@ select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.
 select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), array['p_session_id', 'p_question_id']::text[], 'reveal_quiz_answer exposes named identifiers');
 select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'answer_quiz_question' and oidvectortypes(p.proargtypes) = 'uuid, uuid, boolean, uuid'), array['p_session_id', 'p_question_id', 'p_correct', 'p_idempotency_key']::text[], 'answer_quiz_question exposes named identifiers');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), true, 'start_quiz is security definer');
+select ok((select pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(hashtextextended(''score:'' || p_event_id::text, 0))%' from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), 'start_quiz shares the event score advisory lock used by score mutations');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'choose_quiz_category' and oidvectortypes(p.proargtypes) = 'uuid, uuid, uuid'), true, 'choose_quiz_category is security definer');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), true, 'reveal_quiz_answer is security definer');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'answer_quiz_question' and oidvectortypes(p.proargtypes) = 'uuid, uuid, boolean, uuid'), true, 'answer_quiz_question is security definer');
@@ -274,6 +275,7 @@ insert into public.quiz_question_answers (question_id, answer) values
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
 select lives_ok($$select public.start_quiz('91111111-1111-1111-1111-111111111111')$$, 'admin starts the quiz');
+select throws_ok($$select public.start_quiz('91111111-1111-1111-1111-111111111111')$$, 'P0001', 'quiz_already_started', 'start_quiz refuses to reinitialize an existing session');
 reset role;
 select is((select team_order from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), array[
   '92000000-0000-0000-0000-000000000001'::uuid,

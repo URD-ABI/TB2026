@@ -33,8 +33,14 @@ export function QuizPage() {
   if (!event.quizEnabled) {
     return <section className="quiz-notice" role="status">Le quiz n’est pas encore accessible.</section>;
   }
-  if (!quizSession || quizSession.startedAt === null || !currentTeam) {
+  if (!quizSession || quizSession.startedAt === null) {
     return <section className="quiz-notice" role="status">Le quiz sera lancé par l’organisateur.</section>;
+  }
+  if (quizSession.currentTeamIndex >= quizSession.teamOrder.length) {
+    return <section className="quiz-notice" role="status">Quiz terminé. Bravo à toutes les équipes !</section>;
+  }
+  if (!currentTeam) {
+    return <section className="quiz-notice" role="status">L’équipe courante est introuvable.</section>;
   }
 
   if (activeCategory && activeQuestion) {

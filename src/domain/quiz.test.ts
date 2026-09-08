@@ -27,6 +27,21 @@ describe("freezeQuizOrder", () => {
       makeTeam({ id: "team-b", points: 50, keys: 3, tieBreakPriority: null }),
     ])).toThrow(/départage/i);
   });
+
+  it("refuse un groupe ex aequo si une seule priorité de départage manque", () => {
+    expect(() => freezeQuizOrder([
+      makeTeam({ id: "team-a", points: 50, keys: 3, tieBreakPriority: 1 }),
+      makeTeam({ id: "team-b", points: 50, keys: 3, tieBreakPriority: null }),
+    ])).toThrow(/départage/i);
+  });
+
+  it("refuse un groupe ex aequo dont les priorités de départage ne sont pas toutes distinctes", () => {
+    expect(() => freezeQuizOrder([
+      makeTeam({ id: "team-a", points: 50, keys: 3, tieBreakPriority: 1 }),
+      makeTeam({ id: "team-b", points: 50, keys: 3, tieBreakPriority: 1 }),
+      makeTeam({ id: "team-c", points: 50, keys: 3, tieBreakPriority: 2 }),
+    ])).toThrow(/départage/i);
+  });
 });
 
 describe("canChooseCategory", () => {

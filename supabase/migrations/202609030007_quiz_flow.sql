@@ -32,6 +32,13 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended('quiz:' || p_event_id::text, 0));
 
+  if exists (select 1 from public.quiz_sessions session where session.event_id = p_event_id) then
+    raise exception 'quiz_already_started' using errcode = 'P0001';
+  end if;
+
+  -- Freeze the ranking under the same event lock used by apply_score_event.
+  perform pg_advisory_xact_lock(hashtextextended('score:' || p_event_id::text, 0));
+
   if not exists (select 1 from public.events e where e.id = p_event_id and e.quiz_enabled) then
     raise exception 'quiz_disabled' using errcode = 'P0001';
   end if;
@@ -42,14 +49,14 @@ begin
 
   if exists (
     select 1
-    from public.teams left_team
-    join public.teams right_team
-      on right_team.event_id = left_team.event_id
-     and right_team.id > left_team.id
-     and right_team.points = left_team.points
-     and right_team.keys = left_team.keys
-     and right_team.tie_break_priority is not distinct from left_team.tie_break_priority
-    where left_team.event_id = p_event_id
+    from public.teams tied
+    where tied.event_id = p_event_id
+    group by tied.points, tied.keys
+    having count(*) > 1
+      and (
+        count(tied.tie_break_priority) <> count(*)
+        or count(distinct tied.tie_break_priority) <> count(*)
+      )
   ) then
     raise exception 'tie_break_required' using errcode = 'P0001';
   end if;
@@ -66,14 +73,6 @@ begin
   ) values (
     p_event_id, v_team_order, 0, null, 0, false, null, now()
   )
-  on conflict (event_id) do update
-  set team_order = excluded.team_order,
-      current_team_index = 0,
-      active_category_id = null,
-      active_question_index = 0,
-      answer_visible = false,
-      revealed_answer = null,
-      started_at = excluded.started_at
   returning id into v_session_id;
 
   return v_session_id;

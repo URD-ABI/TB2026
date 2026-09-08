@@ -82,6 +82,32 @@ describe("QuizPage", () => {
     expect(screen.queryByText(/au tour de l’équipe hiboux de givre/i)).not.toBeInTheDocument();
   });
 
+  it("affiche un état terminé explicite après le passage de la dernière équipe", async () => {
+    renderQuiz({
+      quizSession: {
+        id: "session-1", eventId: "event-1", teamOrder: ["team-c"], currentTeamIndex: 1,
+        activeCategoryId: null, activeQuestionIndex: 0, answerVisible: false,
+        revealedAnswer: null, startedAt: "2026-12-18T18:00:00Z",
+      },
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/quiz terminé/i);
+    expect(screen.queryByText(/sera lancé par l.organisateur/i)).not.toBeInTheDocument();
+  });
+
+  it("rejette une URL de fond non HTTP et utilise le décor de secours", async () => {
+    renderQuiz({
+      categories: categories.map((category, index) => index === 0
+        ? { ...category, imageUrl: "javascript:alert(document.domain)" }
+        : category),
+    });
+
+    const firstCategory = (await screen.findAllByTestId("quiz-category"))[0];
+    expect(firstCategory).toHaveClass("quiz-category--fallback");
+    expect(firstCategory.style.getPropertyValue("--quiz-category-image")).toBe("");
+    expect(firstCategory.getAttribute("style") ?? "").not.toContain("javascript:");
+  });
+
   it("choisit un thème avec les identifiants nommés et navigue directement vers sa question", async () => {
     const user = userEvent.setup();
     const { repository } = renderQuiz();
