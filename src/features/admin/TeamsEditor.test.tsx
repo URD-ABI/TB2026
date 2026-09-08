@@ -85,4 +85,26 @@ describe("TeamsEditor", () => {
 
     expect(onSaveTieBreak).toHaveBeenCalledWith("event-1", ["team-3", "team-5", "team-4"]);
   });
+
+  it("remplace sans erreur les membres d'un groupe après une mise à jour temps réel au même score", () => {
+    const initialTeams = teams.map((team, index) => ({
+      ...team,
+      points: index < 2 ? 50 : 40 - index,
+      keys: index < 2 ? 3 : 1,
+    }));
+    const props = { onSaveTeam: vi.fn(), applyScore: vi.fn(), onSaveTieBreak: vi.fn() };
+    const view = render(<TeamsEditor {...props} teams={initialTeams} />);
+    const changedTeams = teams.map((team, index) => ({
+      ...team,
+      points: index === 0 || index === 2 ? 50 : 40 - index,
+      keys: index === 0 || index === 2 ? 3 : 1,
+    }));
+
+    expect(() => view.rerender(<TeamsEditor {...props} teams={changedTeams} />)).not.toThrow();
+
+    const panel = screen.getByRole("group", { name: /départage/i });
+    expect(within(panel).getByText("Équipe 1")).toBeInTheDocument();
+    expect(within(panel).getByText("Équipe 3")).toBeInTheDocument();
+    expect(within(panel).queryByText("Équipe 2")).not.toBeInTheDocument();
+  });
 });

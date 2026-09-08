@@ -64,7 +64,13 @@ export function TeamsEditor({ teams, onSaveTeam, applyScore, onSaveTieBreak }: T
           <TeamCard key={team.id} team={team} onSaveTeam={onSaveTeam} applyScore={applyScore} />
         ))}
       </div>
-      {tiedGroups.map((group) => <TieBreakPanel key={`${group[0].points}:${group[0].keys}`} teams={group} onSave={onSaveTieBreak} />)}
+      {tiedGroups.map((group) => (
+        <TieBreakPanel
+          key={`${group[0].points}:${group[0].keys}:${group.map((team) => team.id).join(",")}`}
+          teams={group}
+          onSave={onSaveTieBreak}
+        />
+      ))}
     </section>
   );
 }
