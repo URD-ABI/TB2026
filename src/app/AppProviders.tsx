@@ -67,3 +67,7 @@ export function useEventContext(): EventContextValue {
   if (!context) throw new Error("useEventContext must be used inside AppProviders");
   return context;
 }
+
+export function useOptionalEventContext(): EventContextValue | null {
+  return useContext(EventContext);
+}

@@ -1,6 +1,6 @@
 begin;
 
-select plan(198);
+select plan(215);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -342,6 +342,45 @@ reset role;
 select is((select current_team_index from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), 1, 'last category question advances to the next frozen team');
 select is((select active_category_id is null from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), true, 'last category question returns the public screen to category choice');
 select is((select status from public.quiz_categories where id = '94000000-0000-0000-0000-000000000001'), 'played', 'completed category remains played');
+
+-- Organizer participant administration and event-scoped media.
+select has_function('public', 'reorder_participants', array['uuid', 'uuid[]']::text[], 'participant reorder has the required signature');
+select has_function('public', 'reset_participant_reveals', array['uuid']::text[], 'participant reveal reset has the required signature');
+select has_function('public', 'set_team_tie_break_order', array['uuid', 'uuid[]']::text[], 'manual tie-break order has the required signature');
+
+set local role anon;
+select throws_ok($$select public.reorder_participants('11111111-1111-1111-1111-111111111111', array['30000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000001']::uuid[])$$, '42501', null, 'anon cannot reorder participants');
+select throws_ok($$select public.reset_participant_reveals('11111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot reset participant reveals');
+select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001']::uuid[])$$, '42501', null, 'anon cannot set a tie-break order');
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reorder_participants('11111111-1111-1111-1111-111111111111', array['30000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003']::uuid[])$$, 'admin reorders every participant atomically');
+reset role;
+select is((select reveal_order from public.participants where id = '30000000-0000-0000-0000-000000000002'), 0, 'first reordered participant receives contiguous order zero');
+select is((select reveal_order from public.participants where id = '30000000-0000-0000-0000-000000000001'), 1, 'second reordered participant receives contiguous order one');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reset_participant_reveals('11111111-1111-1111-1111-111111111111')$$, 'admin resets the reveal ceremony');
+reset role;
+select is((select revealed_at is null and revealed_team_id is null from public.participants where id = '30000000-0000-0000-0000-000000000001'), true, 'ceremony reset clears only public reveal state');
+select is((select team_id from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000001'), '20000000-0000-0000-0000-000000000001'::uuid, 'ceremony reset preserves the predetermined assignment');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+update public.teams set points = 50, keys = 3 where id in ('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002');
+select lives_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001']::uuid[])$$, 'admin stores a manual order for tied teams');
+reset role;
+select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000002'), 1, 'manual tie-break winner receives priority one');
+select is((select tie_break_priority from public.teams where id = '20000000-0000-0000-0000-000000000001'), 2, 'manual tie-break runner-up receives priority two');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$insert into storage.objects(bucket_id, name, owner_id) values ('event-media', '11111111-1111-1111-1111-111111111111/background.webp', auth.uid()::text)$$, 'admin uploads media below an existing event path');
+select throws_ok($$insert into storage.objects(bucket_id, name, owner_id) values ('event-media', 'outside-event/background.webp', auth.uid()::text)$$, '42501', null, 'storage rejects media outside an event-scoped path');
+reset role;
 
 select * from finish();
 rollback;

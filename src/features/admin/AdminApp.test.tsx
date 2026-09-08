@@ -135,6 +135,18 @@ describe("AdminApp", () => {
     expect(screen.queryByRole("navigation", { name: /navigation principale/i })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["/admin/evenement", /paramètres de l’événement/i],
+    ["/admin/equipes", /équipes et scores/i],
+    ["/admin/participants", /gestion des participants/i],
+  ])("rend le véritable éditeur de la section %s", async (path, heading) => {
+    const fake = makeAdminClient({ session: { user: { id: "admin-1" } } });
+    renderAdmin(fake.client, path);
+
+    expect(await screen.findByRole("heading", { name: heading })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /tableau de bord/i })).not.toBeInTheDocument();
+  });
+
   it("déconnecte immédiatement un compte authentifié absent de admin_users", async () => {
     const fake = makeAdminClient({ session: { user: { id: "intrus-1" } }, isAdmin: false });
     renderAdmin(fake.client);

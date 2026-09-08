@@ -1,4 +1,5 @@
-import type { EventRepository, EventSnapshot, Unsubscribe } from "./EventRepository";
+import type { AdminParticipant } from "../domain/types";
+import type { CreateParticipantInput, EventRepository, EventSnapshot, Unsubscribe } from "./EventRepository";
 
 type Listener = (snapshot: EventSnapshot) => void;
 
@@ -43,6 +44,92 @@ export class MemoryEventRepository implements EventRepository {
       teams: this.snapshot.teams.map((current) => current.id === team.id ? structuredClone(team) : current),
     };
     this.emit();
+  }
+
+  async getAdminParticipants(eventId: string): Promise<AdminParticipant[]> {
+    return this.snapshot.participants
+      .filter((participant) => participant.eventId === eventId)
+      .map((participant) => ({ ...structuredClone(participant), assignedTeamId: this.assignments[participant.id] ?? "" }));
+  }
+
+  async createParticipant(input: CreateParticipantInput): Promise<void> {
+    const id = crypto.randomUUID();
+    this.snapshot = {
+      ...this.snapshot,
+      participants: [...this.snapshot.participants, {
+        id,
+        eventId: input.eventId,
+        name: input.name,
+        photoUrl: input.photoUrl,
+        revealOrder: input.revealOrder,
+        revealedAt: null,
+        revealedTeamId: null,
+      }],
+    };
+    this.assignments[id] = input.assignedTeamId;
+    this.emit();
+  }
+
+  async updateParticipant(participant: AdminParticipant): Promise<void> {
+    const { assignedTeamId, ...publicParticipant } = participant;
+    this.snapshot = {
+      ...this.snapshot,
+      participants: this.snapshot.participants.map((current) => current.id === participant.id
+        ? structuredClone(publicParticipant)
+        : current),
+    };
+    this.assignments[participant.id] = assignedTeamId;
+    this.emit();
+  }
+
+  async deleteParticipant(eventId: string, participantId: string): Promise<void> {
+    this.snapshot = {
+      ...this.snapshot,
+      participants: this.snapshot.participants.filter((participant) => participant.eventId !== eventId || participant.id !== participantId),
+    };
+    delete this.assignments[participantId];
+    this.emit();
+  }
+
+  async reorderParticipants(eventId: string, orderedParticipantIds: string[]): Promise<void> {
+    this.snapshot = {
+      ...this.snapshot,
+      participants: this.snapshot.participants.map((participant) => {
+        if (participant.eventId !== eventId) return participant;
+        const revealOrder = orderedParticipantIds.indexOf(participant.id);
+        if (revealOrder < 0) throw new Error("invalid_participant_order");
+        return { ...participant, revealOrder };
+      }),
+    };
+    this.emit();
+  }
+
+  async resetParticipantReveals(eventId: string): Promise<void> {
+    this.snapshot = {
+      ...this.snapshot,
+      participants: this.snapshot.participants.map((participant) => participant.eventId === eventId
+        ? { ...participant, revealedAt: null, revealedTeamId: null }
+        : participant),
+    };
+    this.emit();
+  }
+
+  async setTeamTieBreakOrder(eventId: string, orderedTeamIds: string[]): Promise<void> {
+    this.snapshot = {
+      ...this.snapshot,
+      teams: this.snapshot.teams.map((team) => team.eventId === eventId
+        ? { ...team, tieBreakPriority: orderedTeamIds.includes(team.id) ? orderedTeamIds.indexOf(team.id) + 1 : team.tieBreakPriority }
+        : team),
+    };
+    this.emit();
+  }
+
+  async uploadEventBackground(file: File, eventId: string): Promise<string> {
+    return `memory://${eventId}/background/${encodeURIComponent(file.name)}`;
+  }
+
+  async uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string> {
+    return `memory://${eventId}/participants/${participantId}/${encodeURIComponent(file.name)}`;
   }
 
   async revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }> {

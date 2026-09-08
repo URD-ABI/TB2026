@@ -31,6 +31,9 @@ function makeRepository(initial: Promise<EventSnapshot>) {
     }),
     updateEvent: vi.fn(), updateTeam: vi.fn(), revealParticipant: vi.fn(), applyScore: vi.fn(),
     chooseQuizCategory: vi.fn(),
+    getAdminParticipants: vi.fn(), createParticipant: vi.fn(), updateParticipant: vi.fn(),
+    deleteParticipant: vi.fn(), reorderParticipants: vi.fn(), resetParticipantReveals: vi.fn(),
+    setTeamTieBreakOrder: vi.fn(), uploadEventBackground: vi.fn(), uploadParticipantPhoto: vi.fn(),
   };
   return {
     repository,

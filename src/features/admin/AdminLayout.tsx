@@ -1,9 +1,11 @@
 import { NavLink } from "react-router-dom";
+import type { ReactNode } from "react";
 
 type AdminLayoutProps = {
   onSignOut(): Promise<void>;
   signOutPending: boolean;
   signOutError: boolean;
+  children?: ReactNode;
 };
 
 const sections = [
@@ -14,7 +16,7 @@ const sections = [
   { label: "Quiz", to: "/admin/quiz" },
 ] as const;
 
-export function AdminLayout({ onSignOut, signOutPending, signOutError }: AdminLayoutProps) {
+export function AdminLayout({ onSignOut, signOutPending, signOutError, children }: AdminLayoutProps) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
@@ -51,10 +53,10 @@ export function AdminLayout({ onSignOut, signOutPending, signOutError }: AdminLa
       </nav>
 
       <main className="admin-content">
-        <section aria-labelledby="admin-section-title">
+        {children ?? <section aria-labelledby="admin-section-title">
           <h2 id="admin-section-title">Tableau de bord</h2>
           <p>Sélectionnez une rubrique pour préparer et piloter l’événement.</p>
-        </section>
+        </section>}
       </main>
     </div>
   );

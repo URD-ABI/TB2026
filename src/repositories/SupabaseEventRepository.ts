@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AdminParticipant,
   Challenge,
   EventConfig,
   Participant,
@@ -8,8 +9,10 @@ import type {
   QuizSession,
   Team,
 } from "../domain/types";
+import { resizeImage } from "../lib/images";
 import type {
   ConnectionStatus,
+  CreateParticipantInput,
   EventRepository,
   EventSnapshot,
   Unsubscribe,
@@ -320,11 +323,102 @@ export class SupabaseEventRepository implements EventRepository {
       color: team.color,
       emblem: team.emblem,
       display_order: team.displayOrder,
-      points: team.points,
-      keys: team.keys,
-      tie_break_priority: team.tieBreakPriority,
     }).eq("id", team.id).eq("event_id", team.eventId) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
+  }
+
+  async getAdminParticipants(eventId: string): Promise<AdminParticipant[]> {
+    const [participantsResult, assignmentsResult] = await Promise.all([
+      this.client.from("participants").select("*").eq("event_id", eventId),
+      this.client.from("participant_assignments").select("participant_id,team_id"),
+    ]) as [QueryResult<Row[]>, QueryResult<Row[]>];
+    const assignments = new Map(unwrap(assignmentsResult).map((row) => [
+      stringValue(row, "participant_id"),
+      stringValue(row, "team_id"),
+    ]));
+    return unwrap(participantsResult)
+      .map(mapParticipantRow)
+      .sort((left, right) => left.revealOrder - right.revealOrder)
+      .map((participant) => ({
+        ...participant,
+        photoUrl: this.publicMediaUrl(participant.photoUrl),
+        assignedTeamId: assignments.get(participant.id) ?? "",
+      }));
+  }
+
+  async createParticipant(input: CreateParticipantInput): Promise<void> {
+    const participantId = crypto.randomUUID();
+    const participantResult = await this.client.from("participants").insert({
+      id: participantId,
+      event_id: input.eventId,
+      name: input.name,
+      photo_path: storagePath(input.photoUrl),
+      reveal_order: input.revealOrder,
+    }) as QueryResult<unknown>;
+    if (participantResult.error) throw new Error(participantResult.error.message);
+    const assignmentResult = await this.client.from("participant_assignments").insert({
+      participant_id: participantId,
+      team_id: input.assignedTeamId,
+    }) as QueryResult<unknown>;
+    if (assignmentResult.error) {
+      await this.client.from("participants").delete().eq("id", participantId).eq("event_id", input.eventId);
+      throw new Error(assignmentResult.error.message);
+    }
+  }
+
+  async updateParticipant(participant: AdminParticipant): Promise<void> {
+    const participantResult = await this.client.from("participants").update({
+      name: participant.name,
+      photo_path: storagePath(participant.photoUrl),
+    }).eq("id", participant.id).eq("event_id", participant.eventId) as QueryResult<unknown>;
+    if (participantResult.error) throw new Error(participantResult.error.message);
+    const assignmentResult = await this.client.from("participant_assignments").upsert({
+      participant_id: participant.id,
+      team_id: participant.assignedTeamId,
+    }, { onConflict: "participant_id" }) as QueryResult<unknown>;
+    if (assignmentResult.error) throw new Error(assignmentResult.error.message);
+  }
+
+  async deleteParticipant(eventId: string, participantId: string): Promise<void> {
+    const result = await this.client.from("participants").delete().eq("id", participantId).eq("event_id", eventId) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async reorderParticipants(eventId: string, orderedParticipantIds: string[]): Promise<void> {
+    const result = await this.client.rpc("reorder_participants", {
+      p_event_id: eventId,
+      p_participant_ids: orderedParticipantIds,
+    }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async resetParticipantReveals(eventId: string): Promise<void> {
+    const result = await this.client.rpc("reset_participant_reveals", { p_event_id: eventId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async setTeamTieBreakOrder(eventId: string, orderedTeamIds: string[]): Promise<void> {
+    const result = await this.client.rpc("set_team_tie_break_order", {
+      p_event_id: eventId,
+      p_team_ids: orderedTeamIds,
+    }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async uploadEventBackground(file: File, eventId: string): Promise<string> {
+    return this.uploadImage(file, `${eventId}/background.webp`, 1920, 1080);
+  }
+
+  async uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string> {
+    return this.uploadImage(file, `${eventId}/participants/${participantId}.webp`, 1200, 1200);
+  }
+
+  private async uploadImage(file: File, path: string, maximumWidth: number, maximumHeight: number): Promise<string> {
+    const optimized = await resizeImage(file, maximumWidth, maximumHeight, 0.84);
+    const bucket = this.client.storage.from(MEDIA_BUCKET);
+    const result = await bucket.upload(path, optimized, { contentType: "image/webp", upsert: true });
+    if (result.error) throw new Error(result.error.message);
+    return bucket.getPublicUrl(path).data.publicUrl;
   }
 
   async revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }> {

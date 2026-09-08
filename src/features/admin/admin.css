@@ -129,9 +129,155 @@
   padding: 1rem clamp(1rem, 4vw, 3rem) 3rem;
 }
 
+.admin-editor {
+  width: min(100%, 78rem);
+  margin-inline: auto;
+}
+
+.admin-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 42rem;
+  margin-block: 1.25rem;
+}
+
+.admin-form label,
+.admin-media-field label,
+.admin-tie-break label,
+.score-controls__custom label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 700;
+}
+
+.admin-form input,
+.admin-form select,
+.admin-media-field input,
+.admin-tie-break select,
+.score-controls__custom input {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgb(247 239 215 / 30%);
+  border-radius: 0.55rem;
+  color: inherit;
+  background: #12252b;
+}
+
+.admin-form button,
+.admin-editor button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid #ddb75c;
+  border-radius: 0.55rem;
+  color: #f7efd7;
+  background: rgb(221 183 92 / 10%);
+  cursor: pointer;
+}
+
+.admin-editor button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.admin-background-preview {
+  display: block;
+  width: min(100%, 40rem);
+  max-height: 20rem;
+  margin-top: 1rem;
+  border-radius: 0.8rem;
+  object-fit: cover;
+}
+
+.admin-save-status {
+  color: #bce6c5;
+}
+
+.admin-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1rem;
+}
+
+.admin-team-card,
+.admin-participant-card,
+.admin-tie-break,
+.score-controls__custom {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgb(221 183 92 / 32%);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 4%);
+}
+
+.admin-team-card legend,
+.admin-participant-card legend,
+.admin-tie-break legend {
+  padding-inline: 0.35rem;
+  color: #f0d38d;
+  font-weight: 800;
+}
+
+.admin-form--compact {
+  margin-block: 0.6rem 1rem;
+}
+
+.score-controls__quick,
+.admin-order-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.score-controls__custom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.8rem;
+}
+
+.admin-tie-break,
+.admin-participant-create,
+.admin-participant-list {
+  margin-top: 1.5rem;
+}
+
+.admin-participant-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-participant-card img {
+  width: 6rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.admin-confirm {
+  max-width: 34rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #d68b6d;
+  border-radius: 0.8rem;
+  background: #241b1c;
+}
+
+.admin-confirm button + button {
+  margin-left: 0.5rem;
+}
+
+.admin-danger-button {
+  margin-top: 1.5rem;
+  border-color: #d68b6d !important;
+}
+
 @media (max-width: 40rem) {
   .admin-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .score-controls__custom {
+    grid-template-columns: 1fr;
   }
 }

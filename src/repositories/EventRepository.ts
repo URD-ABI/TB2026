@@ -1,4 +1,12 @@
-import type { Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, Team } from "../domain/types";
+import type { AdminParticipant, Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, Team } from "../domain/types";
+
+export type CreateParticipantInput = {
+  eventId: string;
+  name: string;
+  photoUrl: string | null;
+  assignedTeamId: string;
+  revealOrder: number;
+};
 
 export type EventSnapshot = {
   event: EventConfig;
@@ -22,6 +30,15 @@ export interface EventRepository {
   ): Unsubscribe;
   updateEvent(event: EventConfig): Promise<void>;
   updateTeam(team: Team): Promise<void>;
+  getAdminParticipants(eventId: string): Promise<AdminParticipant[]>;
+  createParticipant(input: CreateParticipantInput): Promise<void>;
+  updateParticipant(participant: AdminParticipant): Promise<void>;
+  deleteParticipant(eventId: string, participantId: string): Promise<void>;
+  reorderParticipants(eventId: string, orderedParticipantIds: string[]): Promise<void>;
+  resetParticipantReveals(eventId: string): Promise<void>;
+  setTeamTieBreakOrder(eventId: string, orderedTeamIds: string[]): Promise<void>;
+  uploadEventBackground(file: File, eventId: string): Promise<string>;
+  uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string>;
   revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }>;
   applyScore(input: { eventId: string; teamId: string; points: number; keys: number; source: string; idempotencyKey: string }): Promise<void>;
   chooseQuizCategory(input: { eventId: string; sessionId: string; teamId: string; categoryId: string }): Promise<void>;
