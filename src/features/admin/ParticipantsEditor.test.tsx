@@ -131,4 +131,35 @@ describe("ParticipantsEditor", () => {
 
     expect(onResetReveals).toHaveBeenCalledWith("event-1");
   });
+
+  it("traite la confirmation de suppression comme un dialogue modal accessible et restaure le focus", async () => {
+    const user = userEvent.setup();
+    render(<ParticipantsEditor {...baseProps} />);
+    const alice = screen.getByRole("group", { name: /alice/i });
+    const trigger = within(alice).getByRole("button", { name: /supprimer/i });
+
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: /supprimer alice/i });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByRole("button", { name: /confirmer la suppression/i })).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: /supprimer alice/i })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("ferme aussi le dialogue modal de réinitialisation avec Échap et restaure le focus", async () => {
+    const user = userEvent.setup();
+    render(<ParticipantsEditor {...baseProps} />);
+    const trigger = screen.getByRole("button", { name: /réinitialiser la cérémonie/i });
+
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: /confirmer la réinitialisation/i });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByRole("button", { name: /confirmer la réinitialisation/i })).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: /confirmer la réinitialisation/i })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
 });

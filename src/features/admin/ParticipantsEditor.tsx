@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { AdminParticipant, Team } from "../../domain/types";
 import { validateImageFile } from "../../lib/images";
 import { useSaveState } from "./useSaveState";
@@ -30,6 +30,8 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminParticipant | null>(null);
   const [resetPending, setResetPending] = useState(false);
+  const deleteReturnFocus = useRef<HTMLButtonElement | null>(null);
+  const resetReturnFocus = useRef<HTMLButtonElement | null>(null);
   const createSave = useSaveState();
   const destructiveSave = useSaveState();
 
@@ -84,6 +86,16 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
     setResetPending(false);
   };
 
+  const cancelDelete = () => {
+    deleteReturnFocus.current?.focus();
+    setDeleteTarget(null);
+  };
+
+  const cancelReset = () => {
+    resetReturnFocus.current?.focus();
+    setResetPending(false);
+  };
+
   return (
     <section className="admin-editor" aria-labelledby="participants-editor-title">
       <h2 id="participants-editor-title">Gestion des participants</h2>
@@ -109,28 +121,47 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
             first={index === 0}
             last={index === items.length - 1}
             onMove={(direction) => void move(index, direction)}
-            onDelete={() => setDeleteTarget(participant)}
+            onDelete={(trigger) => {
+              deleteReturnFocus.current = trigger;
+              setDeleteTarget(participant);
+            }}
             onUpdate={props.onUpdate}
             uploadPhoto={props.uploadPhoto}
           />
         ))}
       </div>
 
-      {!resetPending ? (
-        <button type="button" className="admin-danger-button" onClick={() => setResetPending(true)}>Réinitialiser la cérémonie</button>
-      ) : (
-        <div className="admin-confirm" role="dialog" aria-label="Confirmer la réinitialisation">
+      <button
+        ref={resetReturnFocus}
+        type="button"
+        className="admin-danger-button"
+        onClick={() => setResetPending(true)}
+      >Réinitialiser la cérémonie</button>
+      {resetPending ? (
+        <div
+          className="admin-confirm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmer la réinitialisation"
+          onKeyDown={(event) => { if (event.key === "Escape") cancelReset(); }}
+        >
           <p>Les participants pourront être révélés à nouveau. Leurs équipes prédéfinies seront conservées.</p>
-          <button type="button" onClick={() => void reset()}>Confirmer la réinitialisation</button>
-          <button type="button" onClick={() => setResetPending(false)}>Annuler</button>
+          <button autoFocus type="button" onClick={() => void reset()}>Confirmer la réinitialisation</button>
+          <button type="button" onClick={cancelReset}>Annuler</button>
         </div>
-      )}
+      ) : null}
 
       {deleteTarget ? (
-        <div className="admin-confirm" role="dialog" aria-label={`Supprimer ${deleteTarget.name}`}>
+        <div
+          className="admin-confirm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Supprimer ${deleteTarget.name}`}
+          onKeyDown={(event) => { if (event.key === "Escape") cancelDelete(); }}
+        >
           <p>Supprimer {deleteTarget.name} de la cérémonie ?</p>
-          <button type="button" onClick={() => void remove()}>Confirmer la suppression</button>
-          <button type="button" onClick={() => setDeleteTarget(null)}>Annuler</button>
+          <button autoFocus type="button" onClick={() => void remove()}>Confirmer la suppression</button>
+          <button type="button" onClick={cancelDelete}>Annuler</button>
         </div>
       ) : null}
       {destructiveSave.state === "error" ? <p className="admin-alert" role="alert">Opération impossible. Réessayez.</p> : null}
@@ -144,7 +175,7 @@ type ParticipantCardProps = {
   first: boolean;
   last: boolean;
   onMove(direction: -1 | 1): void;
-  onDelete(): void;
+  onDelete(trigger: HTMLButtonElement): void;
   onUpdate(participant: AdminParticipant): Promise<void>;
   uploadPhoto: ParticipantsEditorProps["uploadPhoto"];
 };
@@ -201,7 +232,7 @@ function ParticipantCard({ participant, teams, first, last, onMove, onDelete, on
       <div className="admin-order-controls">
         <button type="button" disabled={first} onClick={() => onMove(-1)}>Monter</button>
         <button type="button" disabled={last} onClick={() => onMove(1)}>Descendre</button>
-        <button type="button" onClick={onDelete}>Supprimer</button>
+        <button type="button" onClick={(event) => onDelete(event.currentTarget)}>Supprimer</button>
       </div>
       {validationError ? <p className="admin-alert" role="alert">{validationError}</p> : null}
       {save.state === "error" ? <p className="admin-alert" role="alert">Enregistrement impossible. Réessayez.</p> : null}

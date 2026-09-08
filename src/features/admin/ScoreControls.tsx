@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Team } from "../../domain/types";
 import type { EventRepository } from "../../repositories/EventRepository";
 import { useSaveState } from "./useSaveState";
@@ -15,17 +15,24 @@ export function ScoreControls({ team, applyScore }: ScoreControlsProps) {
   const [customPoints, setCustomPoints] = useState("");
   const [customKeys, setCustomKeys] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const retry = useRef<{ operation: string; idempotencyKey: string } | null>(null);
 
   const apply = async (points: number, keys: number) => {
     setValidationError(null);
-    await save.run(() => applyScore({
+    const operation = `${points}:${keys}`;
+    const idempotencyKey = retry.current?.operation === operation
+      ? retry.current.idempotencyKey
+      : crypto.randomUUID();
+    retry.current = { operation, idempotencyKey };
+    const saved = await save.run(() => applyScore({
       eventId: team.eventId,
       teamId: team.id,
       points,
       keys,
       source: "manual",
-      idempotencyKey: crypto.randomUUID(),
+      idempotencyKey,
     }));
+    if (saved) retry.current = null;
   };
 
   const applyCustom = async () => {

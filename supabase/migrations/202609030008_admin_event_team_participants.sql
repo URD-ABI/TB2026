@@ -78,6 +78,9 @@ begin
   if not public.is_admin() then
     raise exception 'not_authorized' using errcode = '42501';
   end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('score:' || p_event_id::text, 0));
+
   if coalesce(cardinality(p_team_ids), 0) < 2
     or (select count(distinct id) from unnest(p_team_ids) as ids(id)) <> cardinality(p_team_ids)
     or exists (

@@ -1,6 +1,6 @@
 begin;
 
-select plan(240);
+select plan(243);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -349,6 +349,16 @@ select has_function('public', 'reset_participant_reveals', array['uuid']::text[]
 select has_function('public', 'set_team_tie_break_order', array['uuid', 'uuid[]']::text[], 'manual tie-break order has the required signature');
 select has_function('public', 'create_participant', array['uuid', 'uuid', 'text', 'text', 'uuid', 'integer']::text[], 'transactional participant creation has the required signature');
 select has_function('public', 'update_participant', array['uuid', 'uuid', 'text', 'text', 'uuid']::text[], 'transactional participant update has the required signature');
+select ok(
+  position('pg_advisory_xact_lock' in pg_get_functiondef(p.oid)) > 0
+  and position('pg_advisory_xact_lock' in pg_get_functiondef(p.oid)) < position('select points, keys' in lower(pg_get_functiondef(p.oid))),
+  'tie-break acquires the event score advisory lock before reading the score group'
+)
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname = 'set_team_tie_break_order'
+  and oidvectortypes(p.proargtypes) = 'uuid, uuid[]';
 
 insert into public.events (id, slug, title) values
   ('12222222-2222-2222-2222-222222222222', 'other-admin-event', 'Other admin event');
@@ -437,6 +447,22 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
 select lives_ok($$insert into storage.objects(bucket_id, name, owner_id) values ('event-media', '11111111-1111-1111-1111-111111111111/background.webp', auth.uid()::text)$$, 'admin uploads media below an existing event path');
 select throws_ok($$insert into storage.objects(bucket_id, name, owner_id) values ('event-media', 'outside-event/background.webp', auth.uid()::text)$$, '42501', null, 'storage rejects media outside an event-scoped path');
+reset role;
+
+set local role anon;
+select throws_ok($$delete from storage.objects where bucket_id = 'event-media' and name = '11111111-1111-1111-1111-111111111111/background.webp'$$, '42501', null, 'anon cannot delete event media');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select ok(exists (
+  select 1 from pg_policies
+  where schemaname = 'storage'
+    and tablename = 'objects'
+    and cmd in ('DELETE', 'ALL')
+    and roles @> array['authenticated'::name]
+    and coalesce(qual, '') like '%is_admin()%'
+    and coalesce(qual, '') like '%event-media%'
+), 'storage API deletion is authorized only by the event-media admin policy');
 reset role;
 
 select * from finish();

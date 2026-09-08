@@ -1,6 +1,6 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTeam } from "../../test/fixtures";
 import { ScoreControls } from "./ScoreControls";
 
@@ -11,6 +11,7 @@ function deferred<T>() {
 }
 
 describe("ScoreControls", () => {
+  afterEach(() => vi.restoreAllMocks());
   it("confirme un score uniquement après succès du dépôt et utilise une clé idempotente", async () => {
     const user = userEvent.setup();
     const pending = deferred<void>();
@@ -84,5 +85,46 @@ describe("ScoreControls", () => {
     await user.click(screen.getByRole("button", { name: /ajouter 10 points/i }));
     expect(await screen.findByRole("status")).toHaveTextContent(/enregistré/i);
     expect(applyScore).toHaveBeenCalledTimes(2);
+  });
+
+  it("réutilise la clé d'idempotence d'une opération incertaine puis la renouvelle après succès", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("11111111-1111-4111-8111-111111111111")
+      .mockReturnValueOnce("22222222-2222-4222-8222-222222222222");
+    const applyScore = vi.fn()
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValue(undefined);
+    render(<ScoreControls team={makeTeam()} applyScore={applyScore} />);
+
+    await user.click(screen.getByRole("button", { name: /ajouter 10 points/i }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: /ajouter 10 points/i }));
+    await screen.findByRole("status");
+    await user.click(screen.getByRole("button", { name: /ajouter 10 points/i }));
+
+    expect(applyScore.mock.calls.map(([input]) => input.idempotencyKey)).toEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    ]);
+  });
+
+  it("abandonne la clé incertaine lorsqu'une autre opération est choisie explicitement", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("33333333-3333-4333-8333-333333333333")
+      .mockReturnValueOnce("44444444-4444-4444-8444-444444444444");
+    const applyScore = vi.fn()
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValueOnce(undefined);
+    render(<ScoreControls team={makeTeam()} applyScore={applyScore} />);
+
+    await user.click(screen.getByRole("button", { name: /ajouter 10 points/i }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: /ajouter 1 clé/i }));
+
+    expect(applyScore.mock.calls[0][0].idempotencyKey).toBe("33333333-3333-4333-8333-333333333333");
+    expect(applyScore.mock.calls[1][0].idempotencyKey).toBe("44444444-4444-4444-8444-444444444444");
   });
 });

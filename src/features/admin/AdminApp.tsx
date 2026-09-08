@@ -1,5 +1,5 @@
 import { supabase } from "../../lib/supabase";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useOptionalEventContext } from "../../app/AppProviders";
 import type { AdminParticipant } from "../../domain/types";
@@ -53,21 +53,28 @@ function Placeholder({ title }: { title: string }) {
   return <section className="admin-editor"><h2>{title}</h2><p>Cette rubrique sera disponible à l’étape suivante.</p></section>;
 }
 
-function AdminWorkspace() {
+export function AdminWorkspace() {
   const context = useOptionalEventContext();
   const [participants, setParticipants] = useState<AdminParticipant[]>([]);
+  const [participantsLoadError, setParticipantsLoadError] = useState(false);
+  const participantRequestVersion = useRef(0);
 
   const refreshParticipants = async () => {
     if (!context) return;
+    const requestVersion = ++participantRequestVersion.current;
     try {
-      setParticipants(await context.repository.getAdminParticipants(context.snapshot.event.id));
+      const nextParticipants = await context.repository.getAdminParticipants(context.snapshot.event.id);
+      if (requestVersion !== participantRequestVersion.current) return;
+      setParticipants(nextParticipants);
+      setParticipantsLoadError(false);
     } catch {
-      setParticipants([]);
+      if (requestVersion === participantRequestVersion.current) setParticipantsLoadError(true);
     }
   };
 
   useEffect(() => {
     void refreshParticipants();
+    return () => { participantRequestVersion.current += 1; };
   }, [context?.repository, context?.snapshot.event.id, context?.snapshot.participants]);
 
   const eventRoute = context ? (
@@ -88,7 +95,9 @@ function AdminWorkspace() {
   ) : <Placeholder title="Équipes et scores" />;
 
   const participantsRoute = context ? (
-    <ParticipantsEditor
+    <>
+      {participantsLoadError ? <p className="admin-alert" role="alert">Chargement des participants impossible. Réessayez.</p> : null}
+      <ParticipantsEditor
       eventId={context.snapshot.event.id}
       teams={context.snapshot.teams}
       participants={participants}
@@ -98,7 +107,8 @@ function AdminWorkspace() {
       onReorder={async (eventId, participantIds) => { await context.repository.reorderParticipants(eventId, participantIds); await refreshParticipants(); }}
       onResetReveals={async (eventId) => { await context.repository.resetParticipantReveals(eventId); await refreshParticipants(); }}
       uploadPhoto={(file, eventId, participantId) => context.repository.uploadParticipantPhoto(file, eventId, participantId)}
-    />
+      />
+    </>
   ) : <Placeholder title="Gestion des participants" />;
 
   return (

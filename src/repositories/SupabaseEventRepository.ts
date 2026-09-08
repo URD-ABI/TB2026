@@ -371,6 +371,18 @@ export class SupabaseEventRepository implements EventRepository {
   }
 
   async deleteParticipant(eventId: string, participantId: string): Promise<void> {
+    const lookup = await this.client.from("participants")
+      .select("photo_path")
+      .eq("id", participantId)
+      .eq("event_id", eventId)
+      .single() as QueryResult<Row>;
+    const participant = unwrap(lookup);
+    const photoPath = nullableString(participant, "photo_path");
+    if (photoPath !== null) {
+      if (!photoPath.startsWith(`${eventId}/participants/`)) throw new Error("invalid_event_media_path");
+      const removal = await this.client.storage.from(MEDIA_BUCKET).remove([photoPath]);
+      if (removal.error) throw new Error(removal.error.message);
+    }
     const result = await this.client.from("participants").delete().eq("id", participantId).eq("event_id", eventId) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }
@@ -397,11 +409,11 @@ export class SupabaseEventRepository implements EventRepository {
   }
 
   async uploadEventBackground(file: File, eventId: string): Promise<string> {
-    return this.uploadImage(file, `${eventId}/background.webp`, 1920, 1080);
+    return this.uploadImage(file, `${eventId}/background-${crypto.randomUUID()}.webp`, 1920, 1080);
   }
 
   async uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string> {
-    return this.uploadImage(file, `${eventId}/participants/${participantId}.webp`, 1200, 1200);
+    return this.uploadImage(file, `${eventId}/participants/${participantId}-${crypto.randomUUID()}.webp`, 1200, 1200);
   }
 
   private async uploadImage(file: File, path: string, maximumWidth: number, maximumHeight: number): Promise<string> {
