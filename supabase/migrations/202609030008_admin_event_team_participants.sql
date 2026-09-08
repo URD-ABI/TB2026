@@ -210,16 +210,52 @@ begin
 end;
 $$;
 
+create or replace function public.delete_participant(
+  p_event_id uuid,
+  p_participant_id uuid
+)
+returns text
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_photo_path text;
+begin
+  if not public.is_admin() then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+
+  select photo_path into v_photo_path
+  from public.participants
+  where id = p_participant_id and event_id = p_event_id
+  for update;
+  if not found then
+    raise exception 'participant_event_mismatch' using errcode = 'P0001';
+  end if;
+  if v_photo_path is not null
+    and v_photo_path not like p_event_id::text || '/participants/%.webp' then
+    raise exception 'invalid_participant_photo_path' using errcode = 'P0001';
+  end if;
+
+  delete from public.participants
+  where id = p_participant_id and event_id = p_event_id;
+  return v_photo_path;
+end;
+$$;
+
 revoke all on function public.reorder_participants(uuid, uuid[]) from public, anon;
 revoke all on function public.reset_participant_reveals(uuid) from public, anon;
 revoke all on function public.set_team_tie_break_order(uuid, uuid[]) from public, anon;
 revoke all on function public.create_participant(uuid, uuid, text, text, uuid, integer) from public, anon;
 revoke all on function public.update_participant(uuid, uuid, text, text, uuid) from public, anon;
+revoke all on function public.delete_participant(uuid, uuid) from public, anon;
 grant execute on function public.reorder_participants(uuid, uuid[]) to authenticated;
 grant execute on function public.reset_participant_reveals(uuid) to authenticated;
 grant execute on function public.set_team_tie_break_order(uuid, uuid[]) to authenticated;
 grant execute on function public.create_participant(uuid, uuid, text, text, uuid, integer) to authenticated;
 grant execute on function public.update_participant(uuid, uuid, text, text, uuid) to authenticated;
+grant execute on function public.delete_participant(uuid, uuid) to authenticated;
 
 drop policy if exists event_media_admin_write on storage.objects;
 create policy event_media_admin_write

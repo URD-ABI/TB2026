@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { AdminParticipant, Team } from "../../domain/types";
 import { validateImageFile } from "../../lib/images";
 import { useSaveState } from "./useSaveState";
@@ -21,6 +21,7 @@ type ParticipantsEditorProps = {
   onReorder(eventId: string, orderedParticipantIds: string[]): Promise<void>;
   onResetReveals(eventId: string): Promise<void>;
   uploadPhoto(file: File, eventId: string, participantId: string): Promise<string>;
+  removeMedia?(url: string): Promise<void>;
 };
 
 export function ParticipantsEditor(props: ParticipantsEditorProps) {
@@ -76,14 +77,20 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
     if (!deleteTarget) return;
     const target = deleteTarget;
     const saved = await destructiveSave.run(() => props.onDelete(props.eventId, target.id));
-    if (saved) setItems((current) => current.filter((item) => item.id !== target.id));
-    setDeleteTarget(null);
+    if (saved) {
+      setItems((current) => current.filter((item) => item.id !== target.id));
+      setDeleteTarget(null);
+      resetReturnFocus.current?.focus();
+    }
   };
 
   const reset = async () => {
     const saved = await destructiveSave.run(() => props.onResetReveals(props.eventId));
-    if (saved) setItems((current) => current.map((item) => ({ ...item, revealedAt: null, revealedTeamId: null })));
-    setResetPending(false);
+    if (saved) {
+      setItems((current) => current.map((item) => ({ ...item, revealedAt: null, revealedTeamId: null })));
+      setResetPending(false);
+      resetReturnFocus.current?.focus();
+    }
   };
 
   const cancelDelete = () => {
@@ -127,6 +134,7 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
             }}
             onUpdate={props.onUpdate}
             uploadPhoto={props.uploadPhoto}
+            removeMedia={props.removeMedia ?? (async () => undefined)}
           />
         ))}
       </div>
@@ -143,7 +151,10 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
           role="dialog"
           aria-modal="true"
           aria-label="Confirmer la réinitialisation"
-          onKeyDown={(event) => { if (event.key === "Escape") cancelReset(); }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") cancelReset();
+            else trapDialogFocus(event);
+          }}
         >
           <p>Les participants pourront être révélés à nouveau. Leurs équipes prédéfinies seront conservées.</p>
           <button autoFocus type="button" onClick={() => void reset()}>Confirmer la réinitialisation</button>
@@ -157,7 +168,10 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
           role="dialog"
           aria-modal="true"
           aria-label={`Supprimer ${deleteTarget.name}`}
-          onKeyDown={(event) => { if (event.key === "Escape") cancelDelete(); }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") cancelDelete();
+            else trapDialogFocus(event);
+          }}
         >
           <p>Supprimer {deleteTarget.name} de la cérémonie ?</p>
           <button autoFocus type="button" onClick={() => void remove()}>Confirmer la suppression</button>
@@ -169,6 +183,21 @@ export function ParticipantsEditor(props: ParticipantsEditorProps) {
   );
 }
 
+function trapDialogFocus(event: KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Tab") return;
+  const controls = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!first || !last) return;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 type ParticipantCardProps = {
   participant: AdminParticipant;
   teams: Team[];
@@ -178,11 +207,13 @@ type ParticipantCardProps = {
   onDelete(trigger: HTMLButtonElement): void;
   onUpdate(participant: AdminParticipant): Promise<void>;
   uploadPhoto: ParticipantsEditorProps["uploadPhoto"];
+  removeMedia(url: string): Promise<void>;
 };
 
-function ParticipantCard({ participant, teams, first, last, onMove, onDelete, onUpdate, uploadPhoto }: ParticipantCardProps) {
+function ParticipantCard({ participant, teams, first, last, onMove, onDelete, onUpdate, uploadPhoto, removeMedia }: ParticipantCardProps) {
   const [draft, setDraft] = useState(participant);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [pendingCleanup, setPendingCleanup] = useState<string | null>(null);
   const save = useSaveState();
   useEffect(() => setDraft(participant), [participant]);
 
@@ -206,12 +237,40 @@ function ParticipantCard({ participant, teams, first, last, onMove, onDelete, on
       return;
     }
     setValidationError(null);
-    await save.run(async () => {
-      const photoUrl = await uploadPhoto(file, participant.eventId, participant.id);
-      const updated = { ...draft, photoUrl };
-      await onUpdate(updated);
-      setDraft(updated);
+    let photoUrl: string | null = null;
+    const previousUrl = draft.photoUrl;
+    const persisted = await save.run(async () => {
+      photoUrl = await uploadPhoto(file, participant.eventId, participant.id);
+      await onUpdate({ ...draft, photoUrl });
     });
+    if (!photoUrl) return;
+    if (!persisted) {
+      try {
+        await removeMedia(photoUrl);
+      } catch {
+        setPendingCleanup(photoUrl);
+      }
+      return;
+    }
+
+    setDraft({ ...draft, photoUrl });
+    if (previousUrl && previousUrl !== photoUrl) {
+      try {
+        await removeMedia(previousUrl);
+      } catch {
+        setPendingCleanup(previousUrl);
+      }
+    }
+  };
+
+  const retryCleanup = async () => {
+    if (!pendingCleanup) return;
+    try {
+      await removeMedia(pendingCleanup);
+      setPendingCleanup(null);
+    } catch {
+      // Keep the cleanup visible and retryable without repeating the upload.
+    }
   };
 
   return (
@@ -236,6 +295,12 @@ function ParticipantCard({ participant, teams, first, last, onMove, onDelete, on
       </div>
       {validationError ? <p className="admin-alert" role="alert">{validationError}</p> : null}
       {save.state === "error" ? <p className="admin-alert" role="alert">Enregistrement impossible. Réessayez.</p> : null}
+      {pendingCleanup ? (
+        <div className="admin-alert" role="alert">
+          Nettoyage du média impossible. Réessayez.
+          <button type="button" onClick={() => void retryCleanup()}>Réessayer le nettoyage</button>
+        </div>
+      ) : null}
     </fieldset>
   );
 }

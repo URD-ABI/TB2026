@@ -132,6 +132,10 @@ export class MemoryEventRepository implements EventRepository {
     return `memory://${eventId}/participants/${participantId}/${encodeURIComponent(file.name)}`;
   }
 
+  async removeMedia(_url: string): Promise<void> {
+    return undefined;
+  }
+
   async revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }> {
     const participant = this.snapshot.participants.find((item) => item.eventId === eventId && item.id === participantId);
     if (!participant) throw new Error("no_participant");

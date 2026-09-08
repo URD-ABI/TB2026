@@ -1,6 +1,6 @@
 begin;
 
-select plan(243);
+select plan(248);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -349,6 +349,7 @@ select has_function('public', 'reset_participant_reveals', array['uuid']::text[]
 select has_function('public', 'set_team_tie_break_order', array['uuid', 'uuid[]']::text[], 'manual tie-break order has the required signature');
 select has_function('public', 'create_participant', array['uuid', 'uuid', 'text', 'text', 'uuid', 'integer']::text[], 'transactional participant creation has the required signature');
 select has_function('public', 'update_participant', array['uuid', 'uuid', 'text', 'text', 'uuid']::text[], 'transactional participant update has the required signature');
+select has_function('public', 'delete_participant', array['uuid', 'uuid']::text[], 'transactional participant deletion has the required signature');
 select ok(
   position('pg_advisory_xact_lock' in pg_get_functiondef(p.oid)) > 0
   and position('pg_advisory_xact_lock' in pg_get_functiondef(p.oid)) < position('select points, keys' in lower(pg_get_functiondef(p.oid))),
@@ -374,6 +375,7 @@ select throws_ok($$select public.reset_participant_reveals('11111111-1111-1111-1
 select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-1111-111111111111', array['20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001']::uuid[])$$, '42501', null, 'anon cannot set a tie-break order');
 select throws_ok($$select public.create_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Blocked', null, '20000000-0000-0000-0000-000000000001', 3)$$, '42501', null, 'anon cannot create a participant assignment');
 select throws_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001', 'Blocked', null, '20000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot update a participant assignment');
+select throws_ok($$select public.delete_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot delete a participant');
 reset role;
 
 set local role authenticated;
@@ -406,7 +408,7 @@ select is((select count(*) from public.participants where id = '30000000-0000-00
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
-select lives_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Chloe Martin', null, '20000000-0000-0000-0000-000000000003')$$, 'admin updates participant and assignment atomically');
+select lives_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Chloe Martin', '11111111-1111-1111-1111-111111111111/participants/chloe-version.webp', '20000000-0000-0000-0000-000000000003')$$, 'admin updates participant and assignment atomically');
 reset role;
 select is((select name from public.participants where id = '30000000-0000-0000-0000-000000000010'), 'Chloe Martin', 'transactional update stores participant fields');
 select is((select team_id from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), '20000000-0000-0000-0000-000000000003'::uuid, 'transactional update changes the hidden assignment');
@@ -417,6 +419,17 @@ select throws_ok($$select public.update_participant('11111111-1111-1111-1111-111
 reset role;
 select is((select name from public.participants where id = '30000000-0000-0000-0000-000000000010'), 'Chloe Martin', 'failed update rolls back participant fields');
 select is((select team_id from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), '20000000-0000-0000-0000-000000000003'::uuid, 'failed update preserves the previous assignment');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select results_eq(
+  $$select public.delete_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010')$$,
+  $$values ('11111111-1111-1111-1111-111111111111/participants/chloe-version.webp'::text)$$,
+  'participant deletion returns the media path after deleting its database rows'
+);
+reset role;
+select is((select count(*) from public.participants where id = '30000000-0000-0000-0000-000000000010'), 0::bigint, 'participant deletion removes the public row first');
+select is((select count(*) from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), 0::bigint, 'participant deletion cascades the hidden assignment');
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);

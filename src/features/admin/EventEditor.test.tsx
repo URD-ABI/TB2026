@@ -92,4 +92,78 @@ describe("EventEditor", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/enregistrement impossible/i);
     expect(screen.getByRole("alert")).not.toHaveTextContent(/jwt|admin@example\.fr/i);
   });
+
+  it("supprime l'ancien fond seulement après persistance du nouveau fond", async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    const uploadBackground = vi.fn(async () => {
+      calls.push("upload");
+      return "https://media.example/event-1/background-new.webp";
+    });
+    const onSave = vi.fn(async () => { calls.push("persist"); });
+    const removeMedia = vi.fn(async () => { calls.push("cleanup-old"); });
+    render(<EventEditor
+      event={makeEvent({ backgroundUrl: "https://media.example/event-1/background-old.webp" })}
+      onSave={onSave}
+      uploadBackground={uploadBackground}
+      removeMedia={removeMedia}
+    />);
+
+    await user.upload(
+      screen.getByLabelText(/arrière-plan personnalisé/i),
+      new File(["pixels"], "new.png", { type: "image/png" }),
+    );
+
+    expect(calls).toEqual(["upload", "persist", "cleanup-old"]);
+    expect(removeMedia).toHaveBeenCalledWith("https://media.example/event-1/background-old.webp");
+  });
+
+  it("supprime le nouvel objet compensatoire si la persistance échoue", async () => {
+    const user = userEvent.setup();
+    const newUrl = "https://media.example/event-1/background-new.webp";
+    const removeMedia = vi.fn().mockResolvedValue(undefined);
+    render(<EventEditor
+      event={makeEvent({ backgroundUrl: "https://media.example/event-1/background-old.webp" })}
+      onSave={vi.fn().mockRejectedValue(new Error("database timeout"))}
+      uploadBackground={vi.fn().mockResolvedValue(newUrl)}
+      removeMedia={removeMedia}
+    />);
+
+    await user.upload(
+      screen.getByLabelText(/arrière-plan personnalisé/i),
+      new File(["pixels"], "new.png", { type: "image/png" }),
+    );
+
+    expect(removeMedia).toHaveBeenCalledWith(newUrl);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/enregistrement impossible/i);
+  });
+
+  it("réessaie un nettoyage échoué sans téléverser ni persister une seconde fois", async () => {
+    const user = userEvent.setup();
+    const oldUrl = "https://media.example/event-1/background-old.webp";
+    const uploadBackground = vi.fn().mockResolvedValue("https://media.example/event-1/background-new.webp");
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const removeMedia = vi.fn()
+      .mockRejectedValueOnce(new Error("storage secret failure"))
+      .mockResolvedValueOnce(undefined);
+    render(<EventEditor
+      event={makeEvent({ backgroundUrl: oldUrl })}
+      onSave={onSave}
+      uploadBackground={uploadBackground}
+      removeMedia={removeMedia}
+    />);
+
+    await user.upload(
+      screen.getByLabelText(/arrière-plan personnalisé/i),
+      new File(["pixels"], "new.png", { type: "image/png" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(/nettoyage du média impossible/i);
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/storage secret/i);
+    await user.click(screen.getByRole("button", { name: /réessayer le nettoyage/i }));
+
+    expect(removeMedia).toHaveBeenNthCalledWith(1, oldUrl);
+    expect(removeMedia).toHaveBeenNthCalledWith(2, oldUrl);
+    expect(uploadBackground).toHaveBeenCalledOnce();
+    expect(onSave).toHaveBeenCalledOnce();
+  });
 });

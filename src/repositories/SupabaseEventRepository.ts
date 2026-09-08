@@ -146,6 +146,9 @@ function storagePath(value: string | null): string | null {
 }
 
 export class SupabaseEventRepository implements EventRepository {
+  // Bridges the unavoidable DB/Storage transaction boundary for retries made by this client session.
+  private readonly pendingParticipantMediaDeletes = new Map<string, string | null>();
+
   constructor(private readonly client: SupabaseClient) {}
 
   private publicMediaUrl(path: string | null): string | null {
@@ -371,20 +374,25 @@ export class SupabaseEventRepository implements EventRepository {
   }
 
   async deleteParticipant(eventId: string, participantId: string): Promise<void> {
-    const lookup = await this.client.from("participants")
-      .select("photo_path")
-      .eq("id", participantId)
-      .eq("event_id", eventId)
-      .single() as QueryResult<Row>;
-    const participant = unwrap(lookup);
-    const photoPath = nullableString(participant, "photo_path");
+    const retryKey = `${eventId}:${participantId}`;
+    let photoPath: string | null;
+    if (this.pendingParticipantMediaDeletes.has(retryKey)) {
+      photoPath = this.pendingParticipantMediaDeletes.get(retryKey) ?? null;
+    } else {
+      const result = await this.client.rpc("delete_participant", {
+        p_event_id: eventId,
+        p_participant_id: participantId,
+      }) as QueryResult<string>;
+      if (result.error) throw new Error(result.error.message);
+      photoPath = result.data;
+      this.pendingParticipantMediaDeletes.set(retryKey, photoPath);
+    }
     if (photoPath !== null) {
       if (!photoPath.startsWith(`${eventId}/participants/`)) throw new Error("invalid_event_media_path");
       const removal = await this.client.storage.from(MEDIA_BUCKET).remove([photoPath]);
       if (removal.error) throw new Error(removal.error.message);
     }
-    const result = await this.client.from("participants").delete().eq("id", participantId).eq("event_id", eventId) as QueryResult<unknown>;
-    if (result.error) throw new Error(result.error.message);
+    this.pendingParticipantMediaDeletes.delete(retryKey);
   }
 
   async reorderParticipants(eventId: string, orderedParticipantIds: string[]): Promise<void> {
@@ -414,6 +422,13 @@ export class SupabaseEventRepository implements EventRepository {
 
   async uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string> {
     return this.uploadImage(file, `${eventId}/participants/${participantId}-${crypto.randomUUID()}.webp`, 1200, 1200);
+  }
+
+  async removeMedia(url: string): Promise<void> {
+    const path = storagePath(url);
+    if (!path) return;
+    const result = await this.client.storage.from(MEDIA_BUCKET).remove([path]);
+    if (result.error) throw new Error(result.error.message);
   }
 
   private async uploadImage(file: File, path: string, maximumWidth: number, maximumHeight: number): Promise<string> {

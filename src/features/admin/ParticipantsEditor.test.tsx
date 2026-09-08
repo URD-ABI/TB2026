@@ -21,6 +21,7 @@ const baseProps = {
   onReorder: vi.fn(),
   onResetReveals: vi.fn(),
   uploadPhoto: vi.fn(),
+  removeMedia: vi.fn(),
 };
 
 describe("ParticipantsEditor", () => {
@@ -95,6 +96,32 @@ describe("ParticipantsEditor", () => {
     );
   });
 
+  it("nettoie l'ancien portrait après persistance et compense le nouveau si elle échoue", async () => {
+    const user = userEvent.setup();
+    const oldUrl = "https://media.example/event-1/participants/p-1-old.webp";
+    const newUrl = "https://media.example/event-1/participants/p-1-new.webp";
+    const withPortrait = [{ ...participants[0], photoUrl: oldUrl }, participants[1]];
+    const removeMedia = vi.fn().mockResolvedValue(undefined);
+    const onUpdate = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("database timeout"));
+    const uploadPhoto = vi.fn().mockResolvedValueOnce(newUrl).mockResolvedValueOnce(`${newUrl}?retry=2`);
+    render(<ParticipantsEditor
+      {...baseProps}
+      participants={withPortrait}
+      removeMedia={removeMedia}
+      onUpdate={onUpdate}
+      uploadPhoto={uploadPhoto}
+    />);
+    const row = screen.getByRole("group", { name: /alice/i });
+
+    await user.upload(within(row).getByLabelText(/photo/i), new File(["first"], "first.png", { type: "image/png" }));
+    expect(removeMedia).toHaveBeenNthCalledWith(1, oldUrl);
+
+    await user.upload(within(row).getByLabelText(/photo/i), new File(["second"], "second.png", { type: "image/png" }));
+    expect(removeMedia).toHaveBeenNthCalledWith(2, `${newUrl}?retry=2`);
+  });
+
   it("réordonne les participants en transmettant tous les identifiants", async () => {
     const user = userEvent.setup();
     const onReorder = vi.fn().mockResolvedValue(undefined);
@@ -161,5 +188,39 @@ describe("ParticipantsEditor", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: /confirmer la réinitialisation/i })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it("confine Tab et Maj+Tab dans le dialogue de suppression", async () => {
+    const user = userEvent.setup();
+    render(<ParticipantsEditor {...baseProps} />);
+    const alice = screen.getByRole("group", { name: /alice/i });
+    await user.click(within(alice).getByRole("button", { name: /supprimer/i }));
+    const dialog = screen.getByRole("dialog", { name: /supprimer alice/i });
+    const confirm = within(dialog).getByRole("button", { name: /confirmer la suppression/i });
+    const cancel = within(dialog).getByRole("button", { name: /annuler/i });
+
+    expect(confirm).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(cancel).toHaveFocus();
+    await user.tab();
+    expect(confirm).toHaveFocus();
+  });
+
+  it("restaure un focus sûr après confirmation de suppression et le déclencheur après reset", async () => {
+    const user = userEvent.setup();
+    render(<ParticipantsEditor
+      {...baseProps}
+      onDelete={vi.fn().mockResolvedValue(undefined)}
+      onResetReveals={vi.fn().mockResolvedValue(undefined)}
+    />);
+    const alice = screen.getByRole("group", { name: /alice/i });
+    await user.click(within(alice).getByRole("button", { name: /supprimer/i }));
+    await user.click(screen.getByRole("button", { name: /confirmer la suppression/i }));
+    expect(screen.getByRole("button", { name: /réinitialiser la cérémonie/i })).toHaveFocus();
+
+    const resetTrigger = screen.getByRole("button", { name: /réinitialiser la cérémonie/i });
+    await user.click(resetTrigger);
+    await user.click(screen.getByRole("button", { name: /confirmer la réinitialisation/i }));
+    expect(resetTrigger).toHaveFocus();
   });
 });

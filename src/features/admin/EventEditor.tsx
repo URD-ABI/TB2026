@@ -7,6 +7,7 @@ type EventEditorProps = {
   event: EventConfig;
   onSave(event: EventConfig): Promise<void>;
   uploadBackground(file: File, eventId: string): Promise<string>;
+  removeMedia?(url: string): Promise<void>;
 };
 
 function validText(value: string): boolean {
@@ -14,9 +15,10 @@ function validText(value: string): boolean {
   return length >= 1 && length <= 80;
 }
 
-export function EventEditor({ event, onSave, uploadBackground }: EventEditorProps) {
+export function EventEditor({ event, onSave, uploadBackground, removeMedia = async () => undefined }: EventEditorProps) {
   const [draft, setDraft] = useState(event);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [pendingCleanup, setPendingCleanup] = useState<string | null>(null);
   const save = useSaveState();
 
   useEffect(() => setDraft(event), [event]);
@@ -48,12 +50,40 @@ export function EventEditor({ event, onSave, uploadBackground }: EventEditorProp
     }
 
     setValidationError(null);
-    await save.run(async () => {
-      const backgroundUrl = await uploadBackground(file, event.id);
-      const updated = { ...draft, backgroundUrl };
-      await onSave(updated);
-      setDraft(updated);
+    let backgroundUrl: string | null = null;
+    const previousUrl = draft.backgroundUrl;
+    const persisted = await save.run(async () => {
+      backgroundUrl = await uploadBackground(file, event.id);
+      await onSave({ ...draft, backgroundUrl });
     });
+    if (!backgroundUrl) return;
+    if (!persisted) {
+      try {
+        await removeMedia(backgroundUrl);
+      } catch {
+        setPendingCleanup(backgroundUrl);
+      }
+      return;
+    }
+
+    setDraft({ ...draft, backgroundUrl });
+    if (previousUrl && previousUrl !== backgroundUrl) {
+      try {
+        await removeMedia(previousUrl);
+      } catch {
+        setPendingCleanup(previousUrl);
+      }
+    }
+  };
+
+  const retryCleanup = async () => {
+    if (!pendingCleanup) return;
+    try {
+      await removeMedia(pendingCleanup);
+      setPendingCleanup(null);
+    } catch {
+      // Keep the exact path so the same cleanup remains safely retryable.
+    }
   };
 
   const message = save.state === "saving" ? "Enregistrement en cours…"
@@ -89,6 +119,12 @@ export function EventEditor({ event, onSave, uploadBackground }: EventEditorProp
 
       {validationError ? <p className="admin-alert" role="alert">{validationError}</p> : null}
       {save.state === "error" ? <p className="admin-alert" role="alert">Enregistrement impossible. Réessayez.</p> : null}
+      {pendingCleanup ? (
+        <div className="admin-alert" role="alert">
+          Nettoyage du média impossible. Réessayez.
+          <button type="button" onClick={() => void retryCleanup()}>Réessayer le nettoyage</button>
+        </div>
+      ) : null}
       {message ? <p className="admin-save-status" role="status">{message}</p> : null}
     </section>
   );

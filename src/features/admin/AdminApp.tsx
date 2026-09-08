@@ -82,6 +82,7 @@ export function AdminWorkspace() {
       event={context.snapshot.event}
       onSave={(event) => context.repository.updateEvent(event)}
       uploadBackground={(file, eventId) => context.repository.uploadEventBackground(file, eventId)}
+      removeMedia={(url) => context.repository.removeMedia(url)}
     />
   ) : <Placeholder title="Paramètres de l’événement" />;
 
@@ -107,6 +108,7 @@ export function AdminWorkspace() {
       onReorder={async (eventId, participantIds) => { await context.repository.reorderParticipants(eventId, participantIds); await refreshParticipants(); }}
       onResetReveals={async (eventId) => { await context.repository.resetParticipantReveals(eventId); await refreshParticipants(); }}
       uploadPhoto={(file, eventId, participantId) => context.repository.uploadParticipantPhoto(file, eventId, participantId)}
+      removeMedia={(url) => context.repository.removeMedia(url)}
       />
     </>
   ) : <Placeholder title="Gestion des participants" />;

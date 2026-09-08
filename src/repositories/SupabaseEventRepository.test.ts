@@ -358,35 +358,39 @@ describe("SupabaseEventRepository", () => {
     expect(portrait).toContain(paths[2]);
   });
 
-  it("ne supprime la ligne participant qu'après retrait réussi de sa photo et permet un retry", async () => {
+  it("conserve la photo si la suppression SQL du participant échoue", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: "database timeout" } });
+    const remove = vi.fn();
+    const repository = new SupabaseEventRepository({
+      rpc,
+      storage: { from: vi.fn(() => ({ remove })) },
+    } as never);
+
+    await expect(repository.deleteParticipant("event-1", "participant-1")).rejects.toThrow("database timeout");
+    expect(rpc).toHaveBeenCalledWith("delete_participant", {
+      p_event_id: "event-1",
+      p_participant_id: "participant-1",
+    });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("réessaie le retrait Storage après suppression SQL sans relire une ligne disparue", async () => {
+    const path = "event-1/participants/participant-1-version.webp";
+    const rpc = vi.fn().mockResolvedValue({ data: path, error: null });
     const remove = vi.fn()
       .mockResolvedValueOnce({ data: null, error: { message: "storage timeout" } })
       .mockResolvedValueOnce({ data: [], error: null });
-    const operations: string[] = [];
-    const from = vi.fn(() => {
-      let operation = "select";
-      const builder = {
-        select: vi.fn(() => { operation = "select"; return builder; }),
-        delete: vi.fn(() => { operation = "delete"; operations.push("delete"); return builder; }),
-        eq: vi.fn(() => builder),
-        single: vi.fn().mockResolvedValue({ data: { photo_path: "event-1/participants/participant-1-version.webp" }, error: null }),
-        then: (resolve: (value: QueryResult) => unknown) => Promise.resolve({ data: null, error: null }).then(resolve),
-      };
-      void operation;
-      return builder;
-    });
     const repository = new SupabaseEventRepository({
-      from,
+      rpc,
       storage: { from: vi.fn(() => ({ remove })) },
     } as never);
 
     await expect(repository.deleteParticipant("event-1", "participant-1")).rejects.toThrow("storage timeout");
-    expect(remove).toHaveBeenNthCalledWith(1, ["event-1/participants/participant-1-version.webp"]);
-    expect(operations).not.toContain("delete");
-
     await expect(repository.deleteParticipant("event-1", "participant-1")).resolves.toBeUndefined();
-    expect(remove).toHaveBeenNthCalledWith(2, ["event-1/participants/participant-1-version.webp"]);
-    expect(operations).toEqual(["delete"]);
+
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenNthCalledWith(1, [path]);
+    expect(remove).toHaveBeenNthCalledWith(2, [path]);
   });
 
   it("regroupe les changements rapides, signale la reconnexion puis se désabonne", async () => {
