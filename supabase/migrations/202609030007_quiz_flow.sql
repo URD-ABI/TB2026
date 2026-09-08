@@ -32,7 +32,11 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended('quiz:' || p_event_id::text, 0));
 
-  if exists (select 1 from public.quiz_sessions session where session.event_id = p_event_id) then
+  if exists (
+    select 1 from public.quiz_sessions session
+    where session.event_id = p_event_id
+      and session.started_at is not null
+  ) then
     raise exception 'quiz_already_started' using errcode = 'P0001';
   end if;
 
@@ -67,13 +71,27 @@ begin
   from public.teams ranked
   where ranked.event_id = p_event_id;
 
-  insert into public.quiz_sessions (
-    event_id, team_order, current_team_index, active_category_id,
-    active_question_index, answer_visible, revealed_answer, started_at
-  ) values (
-    p_event_id, v_team_order, 0, null, 0, false, null, now()
-  )
+  update public.quiz_sessions
+  set team_order = v_team_order,
+      current_team_index = 0,
+      active_category_id = null,
+      active_question_index = 0,
+      answer_visible = false,
+      revealed_answer = null,
+      started_at = now()
+  where event_id = p_event_id
+    and started_at is null
   returning id into v_session_id;
+
+  if not found then
+    insert into public.quiz_sessions (
+      event_id, team_order, current_team_index, active_category_id,
+      active_question_index, answer_visible, revealed_answer, started_at
+    ) values (
+      p_event_id, v_team_order, 0, null, 0, false, null, now()
+    )
+    returning id into v_session_id;
+  end if;
 
   return v_session_id;
 end;

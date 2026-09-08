@@ -271,10 +271,12 @@ insert into public.quiz_questions (id, category_id, prompt, points, display_orde
 insert into public.quiz_question_answers (question_id, answer) values
   ('95000000-0000-0000-0000-000000000001', 'First protected answer'),
   ('95000000-0000-0000-0000-000000000002', 'Second protected answer');
+insert into public.quiz_sessions (id, event_id)
+values ('97000000-0000-0000-0000-000000000001', '91111111-1111-1111-1111-111111111111');
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
-select lives_ok($$select public.start_quiz('91111111-1111-1111-1111-111111111111')$$, 'admin starts the quiz');
+select lives_ok($$select public.start_quiz('91111111-1111-1111-1111-111111111111')$$, 'admin starts a prepared session whose started_at is null');
 select throws_ok($$select public.start_quiz('91111111-1111-1111-1111-111111111111')$$, 'P0001', 'quiz_already_started', 'start_quiz refuses to reinitialize an existing session');
 reset role;
 select is((select team_order from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), array[
