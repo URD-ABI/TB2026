@@ -2,14 +2,16 @@ import { supabase } from "../../lib/supabase";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useOptionalEventContext } from "../../app/AppProviders";
-import type { AdminParticipant, AdminQuizQuestion } from "../../domain/types";
+import type { AdminParticipant, AdminQuizQuestion, ScoreEvent } from "../../domain/types";
 import { AdminLayout } from "./AdminLayout";
+import { BackupControls } from "./BackupControls";
 import { ChallengesEditor } from "./ChallengesEditor";
 import { EventEditor } from "./EventEditor";
 import { LoginPage } from "./LoginPage";
 import { ParticipantsEditor } from "./ParticipantsEditor";
 import { QuizControlPanel } from "./QuizControlPanel";
 import { QuizEditor } from "./QuizEditor";
+import { ScoreHistory } from "./ScoreHistory";
 import { TeamsEditor } from "./TeamsEditor";
 import { useAdminSession, type AdminClient } from "./useAdminSession";
 import "./admin.css";
@@ -62,6 +64,7 @@ export function AdminWorkspace() {
   const [participantsLoadError, setParticipantsLoadError] = useState(false);
   const [adminQuestions, setAdminQuestions] = useState<AdminQuizQuestion[]>([]);
   const [quizLoadError, setQuizLoadError] = useState(false);
+  const [scoreHistory, setScoreHistory] = useState<ScoreEvent[]>([]);
   const [mediaCleanupError, setMediaCleanupError] = useState(false);
   const participantRequestVersion = useRef(0);
 
@@ -96,6 +99,12 @@ export function AdminWorkspace() {
     } catch { setQuizLoadError(true); }
   };
 
+  const refreshScoreHistory = async () => {
+    if (!context) return;
+    try { setScoreHistory(await context.repository.getScoreHistory(context.snapshot.event.id)); }
+    catch { /* Les scores visibles restent utilisables même si l'historique est indisponible. */ }
+  };
+
   useEffect(() => {
     void refreshParticipants();
     return () => { participantRequestVersion.current += 1; };
@@ -106,6 +115,7 @@ export function AdminWorkspace() {
   }, [context?.repository, context?.snapshot.event.id]);
 
   useEffect(() => { void refreshQuizQuestions(); }, [context?.repository, context?.snapshot.event.id, context?.snapshot.questions]);
+  useEffect(() => { void refreshScoreHistory(); }, [context?.repository, context?.snapshot.event.id, context?.snapshot.teams]);
 
   const eventRoute = context ? (
     <EventEditor
@@ -120,12 +130,12 @@ export function AdminWorkspace() {
   ) : <Placeholder title="Paramètres de l’événement" />;
 
   const teamsRoute = context ? (
-    <TeamsEditor
+    <><TeamsEditor
       teams={context.snapshot.teams}
       onSaveTeam={(team) => context.repository.updateTeam(team)}
       applyScore={(input) => context.repository.applyScore(input)}
       onSaveTieBreak={(eventId, teamIds) => context.repository.setTeamTieBreakOrder(eventId, teamIds)}
-    />
+    /><ScoreHistory events={scoreHistory} teams={context.snapshot.teams} onReverse={async (id) => { await context.repository.reverseScoreEvent(id); await refreshScoreHistory(); }} /></>
   ) : <Placeholder title="Équipes et scores" />;
 
   const participantsRoute = context ? (
@@ -177,6 +187,8 @@ export function AdminWorkspace() {
     />
   </> : <Placeholder title="Quiz" />;
 
+  const dashboardRoute = context ? <><section><h2>Tableau de bord</h2><p>Sélectionnez une rubrique pour préparer et piloter l’événement.</p></section><BackupControls snapshot={context.snapshot} onReset={(eventId) => context.repository.resetRehearsal(eventId)} /></> : <Placeholder title="Tableau de bord" />;
+
   return (
     <>
       {mediaCleanupError ? (
@@ -186,7 +198,7 @@ export function AdminWorkspace() {
         </div>
       ) : null}
       <Routes>
-      <Route path="/admin" element={<section><h2>Tableau de bord</h2><p>Sélectionnez une rubrique pour préparer et piloter l’événement.</p></section>} />
+      <Route path="/admin" element={dashboardRoute} />
       <Route path="/admin/evenement" element={eventRoute} />
       <Route path="/admin/equipes" element={teamsRoute} />
       <Route path="/admin/participants" element={participantsRoute} />

@@ -1,6 +1,6 @@
 begin;
 
-select plan(294);
+select plan(316);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -582,6 +582,49 @@ select lives_ok($$select public.delete_quiz_question('a6000000-0000-0000-0000-00
 select throws_ok($$select public.delete_quiz_question('95000000-0000-0000-0000-000000000001')$$, 'P0001', 'question_already_used', 'an answered question cannot be deleted');
 select throws_ok($$delete from public.quiz_questions where id = '95000000-0000-0000-0000-000000000001'$$, '23503', null, 'the database constraint preserves an answered question even outside the RPC');
 reset role;
+
+select has_function('public', 'get_score_history', array['uuid']::text[], 'score history listing has the required signature');
+select has_function('public', 'reverse_score_event', array['uuid']::text[], 'score reversal has the required signature');
+select has_function('public', 'reset_rehearsal', array['uuid']::text[], 'rehearsal reset has the required signature');
+select ok(
+  position('pg_advisory_xact_lock' in pg_get_functiondef(p.oid)) < position('for update' in lower(pg_get_functiondef(p.oid))),
+  'score reversal acquires the event advisory lock before its row lock'
+) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.proname = 'reverse_score_event' and oidvectortypes(p.proargtypes) = 'uuid';
+set local role anon;
+select throws_ok($$select * from public.get_score_history('91111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot read score history');
+select throws_ok($$select public.reverse_score_event('a3000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot reverse a score');
+select throws_ok($$select public.reset_rehearsal('91111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot reset a rehearsal');
+reset role;
+
+insert into public.teams(id, event_id, name, color, display_order, points, keys) values ('a2000000-0000-0000-0000-000000000001', 'a1111111-1111-1111-1111-111111111111', 'History team', '#123456', 0, 20, 2);
+insert into public.score_events(id, event_id, team_id, points_delta, keys_delta, source, idempotency_key) values ('a3000000-0000-0000-0000-000000000001', 'a1111111-1111-1111-1111-111111111111', 'a2000000-0000-0000-0000-000000000001', 10, 1, 'challenge', 'a3100000-0000-4000-8000-000000000001');
+insert into public.participants(id, event_id, name, reveal_order, revealed_team_id, revealed_at) values ('a7000000-0000-0000-0000-000000000001', '91111111-1111-1111-1111-111111111111', 'Revealed', 0, '92000000-0000-0000-0000-000000000001', now());
+insert into public.participant_assignments(participant_id, team_id) values ('a7000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reverse_score_event('a3000000-0000-0000-0000-000000000001')$$, 'admin reverses an active score event');
+reset role;
+select is((select points from public.teams where id = 'a2000000-0000-0000-0000-000000000001'), 10, 'reversal subtracts the points delta');
+select is((select keys from public.teams where id = 'a2000000-0000-0000-0000-000000000001'), 1, 'reversal subtracts the keys delta');
+select ok((select reversed_at is not null from public.score_events where id = 'a3000000-0000-0000-0000-000000000001'), 'reversal records its completion');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reverse_score_event('a3000000-0000-0000-0000-000000000001')$$, 'repeating a reversal is idempotent');
+reset role;
+select is((select points from public.teams where id = 'a2000000-0000-0000-0000-000000000001'), 10, 'repeating a reversal does not change points twice');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reset_rehearsal('91111111-1111-1111-1111-111111111111')$$, 'admin resets all transient rehearsal data');
+reset role;
+select is((select count(*) from public.teams where event_id = '91111111-1111-1111-1111-111111111111' and (points <> 0 or keys <> 0 or tie_break_priority is not null)), 0::bigint, 'reset clears scores, keys, and tie breaks');
+select is((select count(*) from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), 0::bigint, 'reset removes quiz session state');
+select is((select count(*) from public.quiz_answers answer join public.quiz_sessions session on session.id = answer.session_id where session.event_id = '91111111-1111-1111-1111-111111111111'), 0::bigint, 'reset removes quiz answers');
+select is((select count(*) from public.quiz_categories where event_id = '91111111-1111-1111-1111-111111111111' and (status <> 'available' or chosen_by_team_id is not null)), 0::bigint, 'reset restores quiz category availability');
+select is((select count(*) from public.score_events where event_id = '91111111-1111-1111-1111-111111111111'), 0::bigint, 'reset removes score history');
+select is((select count(*) from public.quiz_categories where event_id = '91111111-1111-1111-1111-111111111111'), 6::bigint, 'reset preserves editorial quiz configuration');
+select ok((select revealed_at is null and revealed_team_id is null from public.participants where id = 'a7000000-0000-0000-0000-000000000001'), 'reset clears participant reveal state');
+select is((select team_id from public.participant_assignments where participant_id = 'a7000000-0000-0000-0000-000000000001'), '92000000-0000-0000-0000-000000000001'::uuid, 'reset preserves predetermined participant assignments');
 
 select * from finish();
 rollback;

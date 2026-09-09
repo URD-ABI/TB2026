@@ -500,6 +500,19 @@ describe("SupabaseEventRepository", () => {
     ]);
   });
 
+  it("charge, annule et réinitialise les données de répétition via les RPC protégées", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: [{ id: "score-1", event_id: "event-1", team_id: "team-1", points_delta: 10, keys_delta: 1, source: "défi", created_at: "2026-12-18T10:00:00Z", reversed_at: null }], error: null })
+      .mockResolvedValue({ data: null, error: null });
+    const repository = new SupabaseEventRepository({ rpc } as never);
+
+    await expect(repository.getScoreHistory("event-1")).resolves.toEqual([expect.objectContaining({ id: "score-1", pointsDelta: 10, keysDelta: 1 })]);
+    await repository.reverseScoreEvent("score-1");
+    await repository.resetRehearsal("event-1");
+
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(["get_score_history", "reverse_score_event", "reset_rehearsal"]);
+  });
+
   it("regroupe les changements rapides, signale la reconnexion puis se désabonne", async () => {
     vi.useFakeTimers();
     const query = makeSnapshotClient();

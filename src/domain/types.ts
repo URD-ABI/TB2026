@@ -76,3 +76,14 @@ export type EventConfig = {
 };
 
 export type RankedTeam = { team: Team; rank: number; requiresTieBreak: boolean };
+
+export type ScoreEvent = {
+  id: Id;
+  eventId: Id;
+  teamId: Id;
+  pointsDelta: number;
+  keysDelta: number;
+  source: string;
+  createdAt: string;
+  reversedAt: string | null;
+};

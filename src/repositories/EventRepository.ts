@@ -1,4 +1,4 @@
-import type { AdminParticipant, AdminQuizQuestion, Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, Team } from "../domain/types";
+import type { AdminParticipant, AdminQuizQuestion, Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, ScoreEvent, Team } from "../domain/types";
 
 export type CreateParticipantInput = {
   eventId: string;
@@ -60,4 +60,7 @@ export interface EventRepository {
   startQuiz(eventId: string): Promise<void>;
   revealQuizAnswer(sessionId: string, questionId: string): Promise<void>;
   answerQuizQuestion(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void>;
+  getScoreHistory(eventId: string): Promise<ScoreEvent[]>;
+  reverseScoreEvent(scoreEventId: string): Promise<void>;
+  resetRehearsal(eventId: string): Promise<void>;
 }

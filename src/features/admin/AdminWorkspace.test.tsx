@@ -28,6 +28,7 @@ function makeWorkspaceRepository(
   const repository = {
     cleanupPendingMedia,
     getAdminQuizQuestions: vi.fn().mockResolvedValue([]),
+    getScoreHistory: vi.fn().mockResolvedValue([]),
     getAdminParticipants,
     subscribe: vi.fn((_slug: string, listener: (snapshot: EventSnapshot) => void) => {
       emitSnapshot = listener;

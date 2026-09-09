@@ -8,6 +8,7 @@ import type {
   QuizCategory,
   QuizQuestion,
   QuizSession,
+  ScoreEvent,
   Team,
 } from "../domain/types";
 import { resizeImage } from "../lib/images";
@@ -121,6 +122,14 @@ export function mapQuestionRow(row: Row): QuizQuestion {
 
 function mapAdminQuestionRow(row: Row): AdminQuizQuestion {
   return { ...mapQuestionRow(row), answer: stringValue(row, "answer") };
+}
+
+function mapScoreEventRow(row: Row): ScoreEvent {
+  return {
+    id: stringValue(row, "id"), eventId: stringValue(row, "event_id"), teamId: stringValue(row, "team_id"),
+    pointsDelta: row.points_delta as number, keysDelta: row.keys_delta as number, source: stringValue(row, "source"),
+    createdAt: stringValue(row, "created_at"), reversedAt: nullableString(row, "reversed_at"),
+  };
 }
 
 function unwrap<T>(result: QueryResult<T>): T {
@@ -559,6 +568,21 @@ export class SupabaseEventRepository implements EventRepository {
 
   async answerQuizQuestion(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void> {
     const result = await this.client.rpc("answer_quiz_question", { p_session_id: sessionId, p_question_id: questionId, p_correct: correct, p_idempotency_key: idempotencyKey }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async getScoreHistory(eventId: string): Promise<ScoreEvent[]> {
+    const result = await this.client.rpc("get_score_history", { p_event_id: eventId }) as QueryResult<Row[]>;
+    return unwrap(result).map(mapScoreEventRow);
+  }
+
+  async reverseScoreEvent(scoreEventId: string): Promise<void> {
+    const result = await this.client.rpc("reverse_score_event", { p_score_event_id: scoreEventId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async resetRehearsal(eventId: string): Promise<void> {
+    const result = await this.client.rpc("reset_rehearsal", { p_event_id: eventId }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }
 }

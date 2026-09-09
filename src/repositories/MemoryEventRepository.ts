@@ -265,4 +265,16 @@ export class MemoryEventRepository implements EventRepository {
   async startQuiz(_eventId: string): Promise<void> { return undefined; }
   async revealQuizAnswer(_sessionId: string, _questionId: string): Promise<void> { return undefined; }
   async answerQuizQuestion(_sessionId: string, _questionId: string, _correct: boolean, _idempotencyKey: string): Promise<void> { return undefined; }
+  async getScoreHistory(_eventId: string) { return []; }
+  async reverseScoreEvent(_scoreEventId: string): Promise<void> { return undefined; }
+  async resetRehearsal(eventId: string): Promise<void> {
+    this.snapshot = {
+      ...this.snapshot,
+      teams: this.snapshot.teams.map((team) => team.eventId === eventId ? { ...team, points: 0, keys: 0, tieBreakPriority: null } : team),
+      participants: this.snapshot.participants.map((participant) => participant.eventId === eventId ? { ...participant, revealedAt: null, revealedTeamId: null } : participant),
+      categories: this.snapshot.categories.map((category) => category.eventId === eventId ? { ...category, status: "available", chosenByTeamId: null } : category),
+      quizSession: null,
+    };
+    this.emit();
+  }
 }
