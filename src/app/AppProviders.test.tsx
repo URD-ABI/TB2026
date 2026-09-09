@@ -33,8 +33,12 @@ function makeRepository(initial: Promise<EventSnapshot>) {
     chooseQuizCategory: vi.fn(),
     getAdminParticipants: vi.fn(), createParticipant: vi.fn(), updateParticipant: vi.fn(),
     deleteParticipant: vi.fn(), reorderParticipants: vi.fn(), resetParticipantReveals: vi.fn(),
-    setTeamTieBreakOrder: vi.fn(), uploadEventBackground: vi.fn(), uploadParticipantPhoto: vi.fn(),
+    setTeamTieBreakOrder: vi.fn(), updateChallenge: vi.fn(), reorderChallenges: vi.fn(),
+    getAdminQuizQuestions: vi.fn(), updateQuizCategory: vi.fn(), reorderQuizCategories: vi.fn(),
+    createQuizQuestion: vi.fn(), updateQuizQuestion: vi.fn(), deleteQuizQuestion: vi.fn(), reorderQuizQuestions: vi.fn(),
+    uploadEventBackground: vi.fn(), uploadParticipantPhoto: vi.fn(), uploadChallengeImage: vi.fn(), uploadQuizCategoryImage: vi.fn(),
     cleanupPendingMedia: vi.fn(), removeMedia: vi.fn(),
+    startQuiz: vi.fn(), revealQuizAnswer: vi.fn(), answerQuizQuestion: vi.fn(),
   };
   return {
     repository,

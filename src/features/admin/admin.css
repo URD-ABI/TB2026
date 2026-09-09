@@ -152,6 +152,7 @@
 
 .admin-form input,
 .admin-form select,
+.admin-form textarea,
 .admin-media-field input,
 .admin-tie-break select,
 .score-controls__custom input {
@@ -161,6 +162,11 @@
   border-radius: 0.55rem;
   color: inherit;
   background: #12252b;
+}
+
+.admin-form textarea {
+  min-height: 6rem;
+  resize: vertical;
 }
 
 .admin-form button,
@@ -196,6 +202,47 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
   gap: 1rem;
+}
+
+.admin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-content-card,
+.admin-quiz-control,
+.admin-live-question {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgb(221 183 92 / 32%);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 4%);
+}
+
+.admin-content-card > img {
+  width: 100%;
+  max-height: 12rem;
+  border-radius: 0.7rem;
+  object-fit: cover;
+}
+
+.admin-question {
+  padding-top: 1rem;
+  border-top: 1px solid rgb(247 239 215 / 15%);
+}
+
+.admin-question--new,
+.admin-quiz-control {
+  margin-block: 1.5rem;
+}
+
+.admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-block: 1rem;
 }
 
 .admin-team-card,

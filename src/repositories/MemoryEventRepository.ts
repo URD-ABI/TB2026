@@ -1,5 +1,5 @@
-import type { AdminParticipant } from "../domain/types";
-import type { CreateParticipantInput, EventRepository, EventSnapshot, Unsubscribe } from "./EventRepository";
+import type { AdminParticipant, AdminQuizQuestion, Challenge, QuizCategory } from "../domain/types";
+import type { CreateParticipantInput, CreateQuizQuestionInput, EventRepository, EventSnapshot, Unsubscribe } from "./EventRepository";
 
 type Listener = (snapshot: EventSnapshot) => void;
 
@@ -124,12 +124,64 @@ export class MemoryEventRepository implements EventRepository {
     this.emit();
   }
 
+  async updateChallenge(challenge: Challenge): Promise<void> {
+    this.snapshot = { ...this.snapshot, challenges: this.snapshot.challenges.map((item) => item.id === challenge.id ? { ...challenge } : item) };
+    this.emit();
+  }
+
+  async reorderChallenges(eventId: string, orderedIds: string[]): Promise<void> {
+    this.snapshot = { ...this.snapshot, challenges: this.snapshot.challenges.map((item) => item.eventId === eventId ? { ...item, displayOrder: orderedIds.indexOf(item.id) } : item) };
+    this.emit();
+  }
+
+  async getAdminQuizQuestions(_eventId: string): Promise<AdminQuizQuestion[]> {
+    return this.snapshot.questions.map((question) => ({ ...question, answer: "" }));
+  }
+
+  async updateQuizCategory(category: QuizCategory): Promise<void> {
+    this.snapshot = { ...this.snapshot, categories: this.snapshot.categories.map((item) => item.id === category.id ? { ...category } : item) };
+    this.emit();
+  }
+
+  async reorderQuizCategories(eventId: string, orderedIds: string[]): Promise<void> {
+    this.snapshot = { ...this.snapshot, categories: this.snapshot.categories.map((item) => item.eventId === eventId ? { ...item, displayOrder: orderedIds.indexOf(item.id) } : item) };
+    this.emit();
+  }
+
+  async createQuizQuestion(input: CreateQuizQuestionInput): Promise<void> {
+    this.snapshot = { ...this.snapshot, questions: [...this.snapshot.questions, { ...input, id: crypto.randomUUID() }] };
+    this.emit();
+  }
+
+  async updateQuizQuestion(question: AdminQuizQuestion): Promise<void> {
+    this.snapshot = { ...this.snapshot, questions: this.snapshot.questions.map((item) => item.id === question.id ? { id: question.id, categoryId: question.categoryId, prompt: question.prompt, points: question.points, displayOrder: question.displayOrder } : item) };
+    this.emit();
+  }
+
+  async deleteQuizQuestion(questionId: string): Promise<void> {
+    this.snapshot = { ...this.snapshot, questions: this.snapshot.questions.filter((item) => item.id !== questionId) };
+    this.emit();
+  }
+
+  async reorderQuizQuestions(categoryId: string, orderedIds: string[]): Promise<void> {
+    this.snapshot = { ...this.snapshot, questions: this.snapshot.questions.map((item) => item.categoryId === categoryId ? { ...item, displayOrder: orderedIds.indexOf(item.id) } : item) };
+    this.emit();
+  }
+
   async uploadEventBackground(file: File, eventId: string): Promise<string> {
     return `memory://${eventId}/background/${encodeURIComponent(file.name)}`;
   }
 
   async uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string> {
     return `memory://${eventId}/participants/${participantId}/${encodeURIComponent(file.name)}`;
+  }
+
+  async uploadChallengeImage(file: File, eventId: string, challengeId: string): Promise<string> {
+    return `memory://${eventId}/challenges/${challengeId}/${encodeURIComponent(file.name)}`;
+  }
+
+  async uploadQuizCategoryImage(file: File, eventId: string, categoryId: string): Promise<string> {
+    return `memory://${eventId}/quiz/${categoryId}/${encodeURIComponent(file.name)}`;
   }
 
   async cleanupPendingMedia(_eventId: string): Promise<void> {
@@ -209,4 +261,8 @@ export class MemoryEventRepository implements EventRepository {
     };
     this.emit();
   }
+
+  async startQuiz(_eventId: string): Promise<void> { return undefined; }
+  async revealQuizAnswer(_sessionId: string, _questionId: string): Promise<void> { return undefined; }
+  async answerQuizQuestion(_sessionId: string, _questionId: string, _correct: boolean, _idempotencyKey: string): Promise<void> { return undefined; }
 }

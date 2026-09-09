@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AdminParticipant,
+  AdminQuizQuestion,
   Challenge,
   EventConfig,
   Participant,
@@ -13,6 +14,7 @@ import { resizeImage } from "../lib/images";
 import type {
   ConnectionStatus,
   CreateParticipantInput,
+  CreateQuizQuestionInput,
   EventRepository,
   EventSnapshot,
   Unsubscribe,
@@ -115,6 +117,10 @@ export function mapQuestionRow(row: Row): QuizQuestion {
     points: row.points as number,
     displayOrder: row.display_order as number,
   };
+}
+
+function mapAdminQuestionRow(row: Row): AdminQuizQuestion {
+  return { ...mapQuestionRow(row), answer: stringValue(row, "answer") };
 }
 
 function unwrap<T>(result: QueryResult<T>): T {
@@ -401,12 +407,70 @@ export class SupabaseEventRepository implements EventRepository {
     if (result.error) throw new Error(result.error.message);
   }
 
+  async updateChallenge(challenge: Challenge): Promise<void> {
+    const result = await this.client.rpc("update_challenge", {
+      p_event_id: challenge.eventId, p_challenge_id: challenge.id, p_title: challenge.title,
+      p_kind: challenge.kind, p_description: challenge.description, p_image_path: storagePath(challenge.imageUrl),
+    }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async reorderChallenges(eventId: string, orderedIds: string[]): Promise<void> {
+    const result = await this.client.rpc("reorder_challenges", { p_event_id: eventId, p_challenge_ids: orderedIds }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async getAdminQuizQuestions(eventId: string): Promise<AdminQuizQuestion[]> {
+    const result = await this.client.rpc("get_admin_quiz_questions", { p_event_id: eventId }) as QueryResult<Row[]>;
+    return unwrap(result).map(mapAdminQuestionRow).sort((a, b) => a.displayOrder - b.displayOrder);
+  }
+
+  async updateQuizCategory(category: QuizCategory): Promise<void> {
+    const result = await this.client.rpc("update_quiz_category", {
+      p_event_id: category.eventId, p_category_id: category.id, p_title: category.title, p_image_path: storagePath(category.imageUrl),
+    }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async reorderQuizCategories(eventId: string, orderedIds: string[]): Promise<void> {
+    const result = await this.client.rpc("reorder_quiz_categories", { p_event_id: eventId, p_category_ids: orderedIds }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async createQuizQuestion(input: CreateQuizQuestionInput): Promise<void> {
+    const result = await this.client.rpc("create_quiz_question", { p_question_id: crypto.randomUUID(), p_category_id: input.categoryId, p_prompt: input.prompt, p_answer: input.answer, p_points: input.points, p_display_order: input.displayOrder }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async updateQuizQuestion(question: AdminQuizQuestion): Promise<void> {
+    const result = await this.client.rpc("update_quiz_question", { p_question_id: question.id, p_category_id: question.categoryId, p_prompt: question.prompt, p_answer: question.answer, p_points: question.points }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async deleteQuizQuestion(questionId: string): Promise<void> {
+    const result = await this.client.rpc("delete_quiz_question", { p_question_id: questionId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async reorderQuizQuestions(categoryId: string, orderedIds: string[]): Promise<void> {
+    const result = await this.client.rpc("reorder_quiz_questions", { p_category_id: categoryId, p_question_ids: orderedIds }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
   async uploadEventBackground(file: File, eventId: string): Promise<string> {
     return this.uploadImage(file, eventId, `${eventId}/background-${crypto.randomUUID()}.webp`, 1920, 1080);
   }
 
   async uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string> {
     return this.uploadImage(file, eventId, `${eventId}/participants/${participantId}-${crypto.randomUUID()}.webp`, 1200, 1200);
+  }
+
+  async uploadChallengeImage(file: File, eventId: string, challengeId: string): Promise<string> {
+    return this.uploadImage(file, eventId, `${eventId}/challenges/${challengeId}-${crypto.randomUUID()}.webp`, 1400, 900);
+  }
+
+  async uploadQuizCategoryImage(file: File, eventId: string, categoryId: string): Promise<string> {
+    return this.uploadImage(file, eventId, `${eventId}/quiz/${categoryId}-${crypto.randomUUID()}.webp`, 1200, 800);
   }
 
   async cleanupPendingMedia(eventId: string): Promise<void> {
@@ -480,6 +544,21 @@ export class SupabaseEventRepository implements EventRepository {
       p_team_id: input.teamId,
       p_category_id: input.categoryId,
     }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async startQuiz(eventId: string): Promise<void> {
+    const result = await this.client.rpc("start_quiz", { p_event_id: eventId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async revealQuizAnswer(sessionId: string, questionId: string): Promise<void> {
+    const result = await this.client.rpc("reveal_quiz_answer", { p_session_id: sessionId, p_question_id: questionId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async answerQuizQuestion(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void> {
+    const result = await this.client.rpc("answer_quiz_question", { p_session_id: sessionId, p_question_id: questionId, p_correct: correct, p_idempotency_key: idempotencyKey }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }
 }

@@ -1,4 +1,4 @@
-import type { AdminParticipant, Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, Team } from "../domain/types";
+import type { AdminParticipant, AdminQuizQuestion, Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, Team } from "../domain/types";
 
 export type CreateParticipantInput = {
   eventId: string;
@@ -7,6 +7,8 @@ export type CreateParticipantInput = {
   assignedTeamId: string;
   revealOrder: number;
 };
+
+export type CreateQuizQuestionInput = Omit<AdminQuizQuestion, "id">;
 
 export type EventSnapshot = {
   event: EventConfig;
@@ -37,11 +39,25 @@ export interface EventRepository {
   reorderParticipants(eventId: string, orderedParticipantIds: string[]): Promise<void>;
   resetParticipantReveals(eventId: string): Promise<void>;
   setTeamTieBreakOrder(eventId: string, orderedTeamIds: string[]): Promise<void>;
+  updateChallenge(challenge: Challenge): Promise<void>;
+  reorderChallenges(eventId: string, orderedIds: string[]): Promise<void>;
+  getAdminQuizQuestions(eventId: string): Promise<AdminQuizQuestion[]>;
+  updateQuizCategory(category: QuizCategory): Promise<void>;
+  reorderQuizCategories(eventId: string, orderedIds: string[]): Promise<void>;
+  createQuizQuestion(input: CreateQuizQuestionInput): Promise<void>;
+  updateQuizQuestion(question: AdminQuizQuestion): Promise<void>;
+  deleteQuizQuestion(questionId: string): Promise<void>;
+  reorderQuizQuestions(categoryId: string, orderedIds: string[]): Promise<void>;
   uploadEventBackground(file: File, eventId: string): Promise<string>;
   uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string>;
+  uploadChallengeImage(file: File, eventId: string, challengeId: string): Promise<string>;
+  uploadQuizCategoryImage(file: File, eventId: string, categoryId: string): Promise<string>;
   cleanupPendingMedia(eventId: string): Promise<void>;
   removeMedia(url: string): Promise<void>;
   revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }>;
   applyScore(input: { eventId: string; teamId: string; points: number; keys: number; source: string; idempotencyKey: string }): Promise<void>;
   chooseQuizCategory(input: { eventId: string; sessionId: string; teamId: string; categoryId: string }): Promise<void>;
+  startQuiz(eventId: string): Promise<void>;
+  revealQuizAnswer(sessionId: string, questionId: string): Promise<void>;
+  answerQuizQuestion(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void>;
 }

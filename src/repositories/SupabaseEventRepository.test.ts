@@ -473,6 +473,33 @@ describe("SupabaseEventRepository", () => {
     expect(remove).toHaveBeenNthCalledWith(2, [path]);
   });
 
+  it("expose les mutations organisateur des défis et du quiz via les RPC atomiques", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: [{ id: "question-1", category_id: "category-1", prompt: "Question ?", answer: "Réponse", points: 10, display_order: 0 }], error: null })
+      .mockResolvedValue({ data: null, error: null });
+    const repository = new SupabaseEventRepository({ rpc } as never);
+
+    await repository.updateChallenge({ id: "challenge-1", eventId: "event-1", title: "Titre", kind: "adresse", description: "Description", imageUrl: null, displayOrder: 0 });
+    await repository.reorderChallenges("event-1", ["challenge-2", "challenge-1"]);
+    await expect(repository.getAdminQuizQuestions("event-1")).resolves.toEqual([expect.objectContaining({ id: "question-1", answer: "Réponse" })]);
+    await repository.updateQuizCategory({ id: "category-1", eventId: "event-1", title: "Hiver", imageUrl: null, displayOrder: 0, status: "available", chosenByTeamId: null });
+    await repository.reorderQuizCategories("event-1", ["category-2", "category-1"]);
+    await repository.createQuizQuestion({ categoryId: "category-1", prompt: "Nouvelle ?", answer: "Oui", points: 20, displayOrder: 1 });
+    await repository.updateQuizQuestion({ id: "question-1", categoryId: "category-1", prompt: "Modifiée ?", answer: "Oui", points: 30, displayOrder: 0 });
+    await repository.deleteQuizQuestion("question-1");
+    await repository.reorderQuizQuestions("category-1", ["question-2", "question-1"]);
+    await repository.startQuiz("event-1");
+    await repository.revealQuizAnswer("session-1", "question-1");
+    await repository.answerQuizQuestion("session-1", "question-1", true, "11111111-1111-4111-8111-111111111111");
+
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "update_challenge", "reorder_challenges", "get_admin_quiz_questions", "update_quiz_category", "reorder_quiz_categories",
+      "create_quiz_question", "update_quiz_question", "delete_quiz_question", "reorder_quiz_questions", "start_quiz", "reveal_quiz_answer", "answer_quiz_question",
+    ]);
+  });
+
   it("regroupe les changements rapides, signale la reconnexion puis se désabonne", async () => {
     vi.useFakeTimers();
     const query = makeSnapshotClient();

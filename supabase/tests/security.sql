@@ -1,6 +1,6 @@
 begin;
 
-select plan(271);
+select plan(294);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -543,6 +543,44 @@ select ok(exists (
     and coalesce(qual, '') like '%is_admin()%'
     and coalesce(qual, '') like '%event-media%'
 ), 'storage API deletion is authorized only by the event-media admin policy');
+reset role;
+
+-- Organizer content editing contract.
+select has_function('public', 'update_challenge', array['uuid', 'uuid', 'text', 'text', 'text', 'text']::text[], 'challenge update has the required signature');
+select has_function('public', 'reorder_challenges', array['uuid', 'uuid[]']::text[], 'challenge reorder has the required signature');
+select has_function('public', 'get_admin_quiz_questions', array['uuid']::text[], 'protected quiz question listing has the required signature');
+select has_function('public', 'update_quiz_category', array['uuid', 'uuid', 'text', 'text']::text[], 'quiz category update has the required signature');
+select has_function('public', 'reorder_quiz_categories', array['uuid', 'uuid[]']::text[], 'quiz category reorder has the required signature');
+select has_function('public', 'create_quiz_question', array['uuid', 'uuid', 'text', 'text', 'integer', 'integer']::text[], 'quiz question creation has the required signature');
+select has_function('public', 'update_quiz_question', array['uuid', 'uuid', 'text', 'text', 'integer']::text[], 'quiz question update has the required signature');
+select has_function('public', 'delete_quiz_question', array['uuid']::text[], 'quiz question deletion has the required signature');
+select has_function('public', 'reorder_quiz_questions', array['uuid', 'uuid[]']::text[], 'quiz question reorder has the required signature');
+
+set local role anon;
+select throws_ok($$select public.update_challenge('11111111-1111-1111-1111-111111111111', '40000000-0000-0000-0000-000000000001', 'Blocked', 'kind', 'description', null)$$, '42501', null, 'anon cannot update a challenge');
+select throws_ok($$select * from public.get_admin_quiz_questions('11111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot read protected quiz answers');
+select throws_ok($$select public.create_quiz_question('a6000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'Blocked?', 'Secret', 10, 1)$$, '42501', null, 'anon cannot create a quiz question');
+reset role;
+
+insert into public.events (id, slug, title) values ('a1111111-1111-1111-1111-111111111111', 'admin-content', 'Admin content');
+insert into public.challenges (id, event_id, title, kind, description, display_order)
+select ('a4000000-0000-0000-0000-00000000000' || position)::uuid, 'a1111111-1111-1111-1111-111111111111', 'Challenge ' || position, 'kind', 'description', position - 1 from generate_series(1,5) position;
+insert into public.quiz_categories (id, event_id, title, display_order)
+select ('a5000000-0000-0000-0000-00000000000' || position)::uuid, 'a1111111-1111-1111-1111-111111111111', 'Category ' || position, position - 1 from generate_series(1,6) position;
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.update_challenge('a1111111-1111-1111-1111-111111111111', 'a4000000-0000-0000-0000-000000000001', 'Updated challenge', 'logic', 'Updated description', null)$$, 'admin updates a challenge atomically');
+select lives_ok($$select public.reorder_challenges('a1111111-1111-1111-1111-111111111111', array['a4000000-0000-0000-0000-000000000002','a4000000-0000-0000-0000-000000000001','a4000000-0000-0000-0000-000000000003','a4000000-0000-0000-0000-000000000004','a4000000-0000-0000-0000-000000000005']::uuid[])$$, 'admin reorders exactly five challenges');
+select lives_ok($$select public.update_quiz_category('a1111111-1111-1111-1111-111111111111', 'a5000000-0000-0000-0000-000000000001', 'Updated category', null)$$, 'admin updates a quiz category atomically');
+select lives_ok($$select public.reorder_quiz_categories('a1111111-1111-1111-1111-111111111111', array['a5000000-0000-0000-0000-000000000002','a5000000-0000-0000-0000-000000000001','a5000000-0000-0000-0000-000000000003','a5000000-0000-0000-0000-000000000004','a5000000-0000-0000-0000-000000000005','a5000000-0000-0000-0000-000000000006']::uuid[])$$, 'admin reorders exactly six categories');
+select lives_ok($$select public.create_quiz_question('a6000000-0000-0000-0000-000000000001', 'a5000000-0000-0000-0000-000000000001', 'Created question?', 'Created answer', 10, 0)$$, 'admin creates question and protected answer atomically');
+select results_eq($$select answer from public.get_admin_quiz_questions('a1111111-1111-1111-1111-111111111111') where id = 'a6000000-0000-0000-0000-000000000001'$$, $$values ('Created answer'::text)$$, 'admin listing includes the protected answer');
+select lives_ok($$select public.update_quiz_question('a6000000-0000-0000-0000-000000000001', 'a5000000-0000-0000-0000-000000000001', 'Updated question?', 'Updated answer', 20)$$, 'admin updates question and answer atomically');
+select lives_ok($$select public.reorder_quiz_questions('a5000000-0000-0000-0000-000000000001', array['a6000000-0000-0000-0000-000000000001']::uuid[])$$, 'admin reorders every question in a category');
+select lives_ok($$select public.delete_quiz_question('a6000000-0000-0000-0000-000000000001')$$, 'admin deletes an unused question');
+select throws_ok($$select public.delete_quiz_question('95000000-0000-0000-0000-000000000001')$$, 'P0001', 'question_already_used', 'an answered question cannot be deleted');
+select throws_ok($$delete from public.quiz_questions where id = '95000000-0000-0000-0000-000000000001'$$, '23503', null, 'the database constraint preserves an answered question even outside the RPC');
 reset role;
 
 select * from finish();

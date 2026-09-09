@@ -2,11 +2,14 @@ import { supabase } from "../../lib/supabase";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useOptionalEventContext } from "../../app/AppProviders";
-import type { AdminParticipant } from "../../domain/types";
+import type { AdminParticipant, AdminQuizQuestion } from "../../domain/types";
 import { AdminLayout } from "./AdminLayout";
+import { ChallengesEditor } from "./ChallengesEditor";
 import { EventEditor } from "./EventEditor";
 import { LoginPage } from "./LoginPage";
 import { ParticipantsEditor } from "./ParticipantsEditor";
+import { QuizControlPanel } from "./QuizControlPanel";
+import { QuizEditor } from "./QuizEditor";
 import { TeamsEditor } from "./TeamsEditor";
 import { useAdminSession, type AdminClient } from "./useAdminSession";
 import "./admin.css";
@@ -57,6 +60,8 @@ export function AdminWorkspace() {
   const context = useOptionalEventContext();
   const [participants, setParticipants] = useState<AdminParticipant[]>([]);
   const [participantsLoadError, setParticipantsLoadError] = useState(false);
+  const [adminQuestions, setAdminQuestions] = useState<AdminQuizQuestion[]>([]);
+  const [quizLoadError, setQuizLoadError] = useState(false);
   const [mediaCleanupError, setMediaCleanupError] = useState(false);
   const participantRequestVersion = useRef(0);
 
@@ -83,6 +88,14 @@ export function AdminWorkspace() {
     }
   };
 
+  const refreshQuizQuestions = async () => {
+    if (!context) return;
+    try {
+      setAdminQuestions(await context.repository.getAdminQuizQuestions(context.snapshot.event.id));
+      setQuizLoadError(false);
+    } catch { setQuizLoadError(true); }
+  };
+
   useEffect(() => {
     void refreshParticipants();
     return () => { participantRequestVersion.current += 1; };
@@ -91,6 +104,8 @@ export function AdminWorkspace() {
   useEffect(() => {
     void cleanupMedia();
   }, [context?.repository, context?.snapshot.event.id]);
+
+  useEffect(() => { void refreshQuizQuestions(); }, [context?.repository, context?.snapshot.event.id, context?.snapshot.questions]);
 
   const eventRoute = context ? (
     <EventEditor
@@ -131,6 +146,37 @@ export function AdminWorkspace() {
     </>
   ) : <Placeholder title="Gestion des participants" />;
 
+  const challengesRoute = context ? <ChallengesEditor
+    challenges={context.snapshot.challenges}
+    onSave={async (challenge) => { await context.repository.updateChallenge(challenge); void cleanupMedia(); }}
+    onReorder={(eventId, ids) => context.repository.reorderChallenges(eventId, ids)}
+    uploadImage={(file, eventId, challengeId) => context.repository.uploadChallengeImage(file, eventId, challengeId)}
+    removeMedia={(url) => context.repository.removeMedia(url)}
+  /> : <Placeholder title="Défis" />;
+
+  const quizRoute = context ? <>
+    {quizLoadError ? <p className="admin-alert" role="alert">Chargement des réponses du quiz impossible. Réessayez.</p> : null}
+    <QuizControlPanel
+      event={context.snapshot.event} teams={context.snapshot.teams} categories={context.snapshot.categories}
+      questions={context.snapshot.questions} session={context.snapshot.quizSession}
+      onToggleAccess={(enabled) => context.repository.updateEvent({ ...context.snapshot.event, quizEnabled: enabled })}
+      onStart={(eventId) => context.repository.startQuiz(eventId)}
+      onReveal={(sessionId, questionId) => context.repository.revealQuizAnswer(sessionId, questionId)}
+      onAnswer={(sessionId, questionId, correct, key) => context.repository.answerQuizQuestion(sessionId, questionId, correct, key)}
+    />
+    <QuizEditor
+      categories={context.snapshot.categories} questions={adminQuestions}
+      onSaveCategory={async (category) => { await context.repository.updateQuizCategory(category); void cleanupMedia(); }}
+      onReorderCategories={(eventId, ids) => context.repository.reorderQuizCategories(eventId, ids)}
+      onCreateQuestion={async (input) => { await context.repository.createQuizQuestion(input); await refreshQuizQuestions(); }}
+      onUpdateQuestion={async (question) => { await context.repository.updateQuizQuestion(question); await refreshQuizQuestions(); }}
+      onDeleteQuestion={async (questionId) => { await context.repository.deleteQuizQuestion(questionId); await refreshQuizQuestions(); }}
+      onReorderQuestions={async (categoryId, ids) => { await context.repository.reorderQuizQuestions(categoryId, ids); await refreshQuizQuestions(); }}
+      uploadCategoryImage={(file, eventId, categoryId) => context.repository.uploadQuizCategoryImage(file, eventId, categoryId)}
+      removeMedia={(url) => context.repository.removeMedia(url)}
+    />
+  </> : <Placeholder title="Quiz" />;
+
   return (
     <>
       {mediaCleanupError ? (
@@ -144,8 +190,8 @@ export function AdminWorkspace() {
       <Route path="/admin/evenement" element={eventRoute} />
       <Route path="/admin/equipes" element={teamsRoute} />
       <Route path="/admin/participants" element={participantsRoute} />
-      <Route path="/admin/defis" element={<Placeholder title="Défis" />} />
-      <Route path="/admin/quiz" element={<Placeholder title="Quiz" />} />
+      <Route path="/admin/defis" element={challengesRoute} />
+      <Route path="/admin/quiz" element={quizRoute} />
       <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
     </>
