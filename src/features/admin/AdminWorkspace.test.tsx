@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AppProviders } from "../../app/AppProviders";
@@ -18,10 +19,14 @@ function adminParticipant(id: string, name: string): AdminParticipant {
   return { ...makeParticipant({ id, name }), assignedTeamId: "team-a" };
 }
 
-function makeWorkspaceRepository(getAdminParticipants: EventRepository["getAdminParticipants"]) {
+function makeWorkspaceRepository(
+  getAdminParticipants: EventRepository["getAdminParticipants"],
+  cleanupPendingMedia: EventRepository["cleanupPendingMedia"] = vi.fn().mockResolvedValue(undefined),
+) {
   let emitSnapshot!: (snapshot: EventSnapshot) => void;
   const initial = makeEventSnapshot({ teams: [makeTeam()] });
   const repository = {
+    cleanupPendingMedia,
     getAdminParticipants,
     subscribe: vi.fn((_slug: string, listener: (snapshot: EventSnapshot) => void) => {
       emitSnapshot = listener;
@@ -76,5 +81,21 @@ describe("AdminWorkspace participant refresh", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/chargement des participants impossible/i);
     expect(screen.getByRole("alert")).not.toHaveTextContent(/jwt|admin@example\.fr/i);
     expect(screen.getByRole("group", { name: "Alice" })).toBeInTheDocument();
+  });
+
+  it("reprend le nettoyage durable au chargement et permet de le relancer", async () => {
+    const user = userEvent.setup();
+    const cleanupPendingMedia = vi.fn()
+      .mockRejectedValueOnce(new Error("storage token leaked"))
+      .mockResolvedValueOnce(undefined);
+    const fake = makeWorkspaceRepository(vi.fn().mockResolvedValue([]), cleanupPendingMedia);
+
+    renderWorkspace(fake.repository);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/nettoyage des médias impossible/i);
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/storage token/i);
+    await user.click(screen.getByRole("button", { name: /réessayer le nettoyage/i }));
+    await vi.waitFor(() => expect(cleanupPendingMedia).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/nettoyage des médias impossible/i)).not.toBeInTheDocument();
   });
 });

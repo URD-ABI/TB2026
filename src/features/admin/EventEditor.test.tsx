@@ -93,7 +93,7 @@ describe("EventEditor", () => {
     expect(screen.getByRole("alert")).not.toHaveTextContent(/jwt|admin@example\.fr/i);
   });
 
-  it("supprime l'ancien fond seulement après persistance du nouveau fond", async () => {
+  it("laisse la mutation transactionnelle mettre l'ancien fond en file après persistance", async () => {
     const user = userEvent.setup();
     const calls: string[] = [];
     const uploadBackground = vi.fn(async () => {
@@ -114,8 +114,8 @@ describe("EventEditor", () => {
       new File(["pixels"], "new.png", { type: "image/png" }),
     );
 
-    expect(calls).toEqual(["upload", "persist", "cleanup-old"]);
-    expect(removeMedia).toHaveBeenCalledWith("https://media.example/event-1/background-old.webp");
+    expect(calls).toEqual(["upload", "persist"]);
+    expect(removeMedia).not.toHaveBeenCalled();
   });
 
   it("supprime le nouvel objet compensatoire si la persistance échoue", async () => {
@@ -140,14 +140,14 @@ describe("EventEditor", () => {
 
   it("réessaie un nettoyage échoué sans téléverser ni persister une seconde fois", async () => {
     const user = userEvent.setup();
-    const oldUrl = "https://media.example/event-1/background-old.webp";
-    const uploadBackground = vi.fn().mockResolvedValue("https://media.example/event-1/background-new.webp");
-    const onSave = vi.fn().mockResolvedValue(undefined);
+    const newUrl = "https://media.example/event-1/background-new.webp";
+    const uploadBackground = vi.fn().mockResolvedValue(newUrl);
+    const onSave = vi.fn().mockRejectedValue(new Error("database timeout"));
     const removeMedia = vi.fn()
       .mockRejectedValueOnce(new Error("storage secret failure"))
       .mockResolvedValueOnce(undefined);
     render(<EventEditor
-      event={makeEvent({ backgroundUrl: oldUrl })}
+      event={makeEvent({ backgroundUrl: "https://media.example/event-1/background-old.webp" })}
       onSave={onSave}
       uploadBackground={uploadBackground}
       removeMedia={removeMedia}
@@ -157,12 +157,12 @@ describe("EventEditor", () => {
       screen.getByLabelText(/arrière-plan personnalisé/i),
       new File(["pixels"], "new.png", { type: "image/png" }),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(/nettoyage du média impossible/i);
-    expect(screen.getByRole("alert")).not.toHaveTextContent(/storage secret/i);
+    expect(await screen.findByText(/nettoyage du média impossible/i)).toBeInTheDocument();
+    expect(screen.queryByText(/storage secret/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /réessayer le nettoyage/i }));
 
-    expect(removeMedia).toHaveBeenNthCalledWith(1, oldUrl);
-    expect(removeMedia).toHaveBeenNthCalledWith(2, oldUrl);
+    expect(removeMedia).toHaveBeenNthCalledWith(1, newUrl);
+    expect(removeMedia).toHaveBeenNthCalledWith(2, newUrl);
     expect(uploadBackground).toHaveBeenCalledOnce();
     expect(onSave).toHaveBeenCalledOnce();
   });

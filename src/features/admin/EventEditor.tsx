@@ -51,7 +51,6 @@ export function EventEditor({ event, onSave, uploadBackground, removeMedia = asy
 
     setValidationError(null);
     let backgroundUrl: string | null = null;
-    const previousUrl = draft.backgroundUrl;
     const persisted = await save.run(async () => {
       backgroundUrl = await uploadBackground(file, event.id);
       await onSave({ ...draft, backgroundUrl });
@@ -67,13 +66,6 @@ export function EventEditor({ event, onSave, uploadBackground, removeMedia = asy
     }
 
     setDraft({ ...draft, backgroundUrl });
-    if (previousUrl && previousUrl !== backgroundUrl) {
-      try {
-        await removeMedia(previousUrl);
-      } catch {
-        setPendingCleanup(previousUrl);
-      }
-    }
   };
 
   const retryCleanup = async () => {

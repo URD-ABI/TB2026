@@ -195,8 +195,8 @@ describe("SupabaseEventRepository", () => {
   });
 
   it("reconvertit l'URL publique du fond en chemin avant la mise à jour", async () => {
-    const { client, calls } = makeSnapshotClient({ events: { data: null, error: null } });
-    const repository = new SupabaseEventRepository(client as never);
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    const repository = new SupabaseEventRepository({ rpc } as never);
     const publicUrl = "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/background.webp";
 
     await repository.updateEvent({
@@ -204,9 +204,11 @@ describe("SupabaseEventRepository", () => {
       backgroundUrl: publicUrl,
     });
 
-    const update = calls.find((call) => call.table === "events" && call.operation === "update");
-    expect(update?.payload).toMatchObject({ background_path: "event-1/background.webp" });
-    expect(JSON.stringify(update?.payload)).not.toContain(publicUrl);
+    expect(rpc).toHaveBeenCalledWith("update_event", expect.objectContaining({
+      p_event_id: "event-1",
+      p_background_path: "event-1/background.webp",
+    }));
+    expect(JSON.stringify(rpc.mock.calls)).not.toContain(publicUrl);
   });
 
   it("charge les questions uniquement depuis les catégories de l'événement", async () => {
@@ -340,9 +342,10 @@ describe("SupabaseEventRepository", () => {
       .mockReturnValueOnce("22222222-2222-4222-8222-222222222222")
       .mockReturnValueOnce("33333333-3333-4333-8333-333333333333");
     const upload = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
     const getPublicUrl = vi.fn((path: string) => ({ data: { publicUrl: `https://media.example/${path}` } }));
     const from = vi.fn(() => ({ upload, getPublicUrl }));
-    const repository = new SupabaseEventRepository({ storage: { from } } as never);
+    const repository = new SupabaseEventRepository({ rpc, storage: { from } } as never);
     const file = new File(["pixels"], "photo.png", { type: "image/png" });
 
     const first = await repository.uploadEventBackground(file, "event-1");
@@ -356,6 +359,75 @@ describe("SupabaseEventRepository", () => {
     expect(paths[2]).toMatch(/^event-1\/participants\/participant-1-[0-9a-f-]+\.webp$/);
     expect(first).not.toBe(second);
     expect(portrait).toContain(paths[2]);
+    expect(rpc).toHaveBeenNthCalledWith(1, "queue_media_cleanup", {
+      p_event_id: "event-1",
+      p_path: paths[0],
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "queue_media_cleanup", {
+      p_event_id: "event-1",
+      p_path: paths[1],
+    });
+    expect(rpc).toHaveBeenNthCalledWith(3, "queue_media_cleanup", {
+      p_event_id: "event-1",
+      p_path: paths[2],
+    });
+  });
+
+  it("supprime l'upload si son inscription dans la file durable échoue", async () => {
+    vi.spyOn(images, "resizeImage").mockResolvedValue(new Blob(["optimized"], { type: "image/webp" }));
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("11111111-1111-4111-8111-111111111111");
+    const upload = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const remove = vi.fn().mockResolvedValue({ data: [], error: null });
+    const getPublicUrl = vi.fn((path: string) => ({ data: { publicUrl: `https://media.example/${path}` } }));
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: "queue unavailable" } });
+    const repository = new SupabaseEventRepository({
+      rpc,
+      storage: { from: vi.fn(() => ({ getPublicUrl, remove, upload })) },
+    } as never);
+
+    await expect(repository.uploadEventBackground(
+      new File(["pixels"], "photo.png", { type: "image/png" }),
+      "event-1",
+    )).rejects.toThrow("queue unavailable");
+
+    expect(remove).toHaveBeenCalledWith(["event-1/background-11111111-1111-4111-8111-111111111111.webp"]);
+  });
+
+  it("reprend après rechargement tous les nettoyages durables puis les acquitte", async () => {
+    const paths = [
+      "event-1/background-old.webp",
+      "event-1/participants/participant-1-old.webp",
+    ];
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: paths, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    const remove = vi.fn().mockResolvedValue({ data: [], error: null });
+    const repositoryAfterReload = new SupabaseEventRepository({
+      rpc,
+      storage: { from: vi.fn(() => ({ remove })) },
+    } as never);
+
+    await repositoryAfterReload.cleanupPendingMedia("event-1");
+
+    expect(rpc).toHaveBeenNthCalledWith(1, "list_media_cleanup", { p_event_id: "event-1" });
+    expect(remove).toHaveBeenCalledWith(paths);
+    expect(rpc).toHaveBeenNthCalledWith(2, "ack_media_cleanup", {
+      p_event_id: "event-1",
+      p_paths: paths,
+    });
+  });
+
+  it("n'acquitte rien lorsque Storage échoue afin de permettre un retry après rechargement", async () => {
+    const paths = ["event-1/background-old.webp", "event-1/background-older.webp"];
+    const rpc = vi.fn().mockResolvedValue({ data: paths, error: null });
+    const remove = vi.fn().mockResolvedValue({ data: null, error: { message: "storage timeout" } });
+    const repository = new SupabaseEventRepository({
+      rpc,
+      storage: { from: vi.fn(() => ({ remove })) },
+    } as never);
+
+    await expect(repository.cleanupPendingMedia("event-1")).rejects.toThrow("storage timeout");
+    expect(rpc).toHaveBeenCalledOnce();
   });
 
   it("conserve la photo si la suppression SQL du participant échoue", async () => {
@@ -374,9 +446,14 @@ describe("SupabaseEventRepository", () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it("réessaie le retrait Storage après suppression SQL sans relire une ligne disparue", async () => {
+  it("laisse la file durable reprendre le retrait Storage après suppression SQL", async () => {
     const path = "event-1/participants/participant-1-version.webp";
-    const rpc = vi.fn().mockResolvedValue({ data: path, error: null });
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: [path], error: null })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: [path], error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
     const remove = vi.fn()
       .mockResolvedValueOnce({ data: null, error: { message: "storage timeout" } })
       .mockResolvedValueOnce({ data: [], error: null });
@@ -388,7 +465,10 @@ describe("SupabaseEventRepository", () => {
     await expect(repository.deleteParticipant("event-1", "participant-1")).rejects.toThrow("storage timeout");
     await expect(repository.deleteParticipant("event-1", "participant-1")).resolves.toBeUndefined();
 
-    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledWith("delete_participant", {
+      p_event_id: "event-1",
+      p_participant_id: "participant-1",
+    });
     expect(remove).toHaveBeenNthCalledWith(1, [path]);
     expect(remove).toHaveBeenNthCalledWith(2, [path]);
   });

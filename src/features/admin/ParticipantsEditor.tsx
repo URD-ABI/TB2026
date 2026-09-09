@@ -238,7 +238,6 @@ function ParticipantCard({ participant, teams, first, last, onMove, onDelete, on
     }
     setValidationError(null);
     let photoUrl: string | null = null;
-    const previousUrl = draft.photoUrl;
     const persisted = await save.run(async () => {
       photoUrl = await uploadPhoto(file, participant.eventId, participant.id);
       await onUpdate({ ...draft, photoUrl });
@@ -254,13 +253,6 @@ function ParticipantCard({ participant, teams, first, last, onMove, onDelete, on
     }
 
     setDraft({ ...draft, photoUrl });
-    if (previousUrl && previousUrl !== photoUrl) {
-      try {
-        await removeMedia(previousUrl);
-      } catch {
-        setPendingCleanup(previousUrl);
-      }
-    }
   };
 
   const retryCleanup = async () => {

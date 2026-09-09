@@ -132,6 +132,10 @@ export class MemoryEventRepository implements EventRepository {
     return `memory://${eventId}/participants/${participantId}/${encodeURIComponent(file.name)}`;
   }
 
+  async cleanupPendingMedia(_eventId: string): Promise<void> {
+    return undefined;
+  }
+
   async removeMedia(_url: string): Promise<void> {
     return undefined;
   }

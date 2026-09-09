@@ -1,6 +1,6 @@
 begin;
 
-select plan(248);
+select plan(271);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -15,6 +15,7 @@ select has_table('public', 'quiz_questions', 'quiz_questions table exists');
 select has_table('public', 'quiz_question_answers', 'quiz_question_answers table exists');
 select has_table('public', 'quiz_sessions', 'quiz_sessions table exists');
 select has_table('public', 'quiz_answers', 'quiz_answers table exists');
+select has_table('public', 'media_cleanup_queue', 'durable media cleanup queue exists');
 
 -- The columns below are the application contract; constraints are exercised later
 -- with real inserts so a similarly-named but incompatible column cannot pass.
@@ -350,6 +351,10 @@ select has_function('public', 'set_team_tie_break_order', array['uuid', 'uuid[]'
 select has_function('public', 'create_participant', array['uuid', 'uuid', 'text', 'text', 'uuid', 'integer']::text[], 'transactional participant creation has the required signature');
 select has_function('public', 'update_participant', array['uuid', 'uuid', 'text', 'text', 'uuid']::text[], 'transactional participant update has the required signature');
 select has_function('public', 'delete_participant', array['uuid', 'uuid']::text[], 'transactional participant deletion has the required signature');
+select has_function('public', 'update_event', array['uuid', 'text', 'text', 'text', 'text', 'boolean']::text[], 'transactional event update has the required signature');
+select has_function('public', 'queue_media_cleanup', array['uuid', 'text']::text[], 'media cleanup enqueue has the required signature');
+select has_function('public', 'list_media_cleanup', array['uuid']::text[], 'media cleanup listing has the required signature');
+select has_function('public', 'ack_media_cleanup', array['uuid', 'text[]']::text[], 'media cleanup acknowledgement has the required signature');
 select ok(
   position('pg_advisory_xact_lock' in pg_get_functiondef(p.oid)) > 0
   and position('pg_advisory_xact_lock' in pg_get_functiondef(p.oid)) < position('select points, keys' in lower(pg_get_functiondef(p.oid))),
@@ -376,6 +381,44 @@ select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-11
 select throws_ok($$select public.create_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Blocked', null, '20000000-0000-0000-0000-000000000001', 3)$$, '42501', null, 'anon cannot create a participant assignment');
 select throws_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001', 'Blocked', null, '20000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot update a participant assignment');
 select throws_ok($$select public.delete_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot delete a participant');
+select throws_ok($$select public.update_event('11111111-1111-1111-1111-111111111111', 'security-test', 'Blocked', '', null, false)$$, '42501', null, 'anon cannot update an event through the transactional mutation');
+select throws_ok($$select public.queue_media_cleanup('11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111/background-new.webp')$$, '42501', null, 'anon cannot enqueue media cleanup');
+select throws_ok($$select public.list_media_cleanup('11111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot list media cleanup');
+select throws_ok($$select public.ack_media_cleanup('11111111-1111-1111-1111-111111111111', array['11111111-1111-1111-1111-111111111111/background-new.webp'])$$, '42501', null, 'anon cannot acknowledge media cleanup');
+reset role;
+
+update public.events
+set background_path = '11111111-1111-1111-1111-111111111111/background-old.webp'
+where id = '11111111-1111-1111-1111-111111111111';
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.queue_media_cleanup('11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111/background-new.webp')$$, 'admin durably tracks a newly uploaded background before persistence');
+select results_eq(
+  $$select unnest(public.list_media_cleanup('11111111-1111-1111-1111-111111111111'))$$,
+  $$values ('11111111-1111-1111-1111-111111111111/background-new.webp'::text)$$,
+  'the newly uploaded background is pending cleanup before persistence'
+);
+select lives_ok($$select public.update_event('11111111-1111-1111-1111-111111111111', 'security-test', 'Updated event', 'Subtitle', '11111111-1111-1111-1111-111111111111/background-new.webp', false)$$, 'event update atomically swaps cleanup ownership');
+reset role;
+select is((select background_path from public.events where id = '11111111-1111-1111-1111-111111111111'), '11111111-1111-1111-1111-111111111111/background-new.webp', 'event update stores the new background');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select results_eq(
+  $$select unnest(public.list_media_cleanup('11111111-1111-1111-1111-111111111111'))$$,
+  $$values ('11111111-1111-1111-1111-111111111111/background-old.webp'::text)$$,
+  'event update queues the old background without retaining the active one'
+);
+select results_eq(
+  $$select path from unnest(public.list_media_cleanup('11111111-1111-1111-1111-111111111111')) as queued(path) where path = '11111111-1111-1111-1111-111111111111/background-new.webp'$$,
+  $$select 'never'::text where false$$,
+  'active media can be removed from the durable cleanup queue'
+);
+select lives_ok($$select public.ack_media_cleanup('11111111-1111-1111-1111-111111111111', array['11111111-1111-1111-1111-111111111111/background-old.webp'])$$, 'admin acknowledges a successful Storage cleanup');
+select results_eq(
+  $$select unnest(public.list_media_cleanup('11111111-1111-1111-1111-111111111111'))$$,
+  $$select 'never'::text where false$$,
+  'acknowledged cleanup no longer appears after reload'
+);
 reset role;
 
 set local role authenticated;
@@ -408,10 +451,24 @@ select is((select count(*) from public.participants where id = '30000000-0000-00
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.queue_media_cleanup('11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111/participants/chloe-version.webp')$$, 'new participant photo is tracked before persistence');
 select lives_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Chloe Martin', '11111111-1111-1111-1111-111111111111/participants/chloe-version.webp', '20000000-0000-0000-0000-000000000003')$$, 'admin updates participant and assignment atomically');
 reset role;
 select is((select name from public.participants where id = '30000000-0000-0000-0000-000000000010'), 'Chloe Martin', 'transactional update stores participant fields');
 select is((select team_id from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), '20000000-0000-0000-0000-000000000003'::uuid, 'transactional update changes the hidden assignment');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select results_eq(
+  $$select unnest(public.list_media_cleanup('11111111-1111-1111-1111-111111111111'))$$,
+  $$values ('11111111-1111-1111-1111-111111111111/participants/chloe.webp'::text)$$,
+  'participant update queues the previous portrait'
+);
+select results_eq(
+  $$select path from unnest(public.list_media_cleanup('11111111-1111-1111-1111-111111111111')) as queued(path) where path = '11111111-1111-1111-1111-111111111111/participants/chloe-version.webp'$$,
+  $$select 'never'::text where false$$,
+  'participant update removes the active portrait from the cleanup queue'
+);
+reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
@@ -430,6 +487,16 @@ select results_eq(
 reset role;
 select is((select count(*) from public.participants where id = '30000000-0000-0000-0000-000000000010'), 0::bigint, 'participant deletion removes the public row first');
 select is((select count(*) from public.participant_assignments where participant_id = '30000000-0000-0000-0000-000000000010'), 0::bigint, 'participant deletion cascades the hidden assignment');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select results_eq(
+  $$select path from unnest(public.list_media_cleanup('11111111-1111-1111-1111-111111111111')) as queued(path) where path = '11111111-1111-1111-1111-111111111111/participants/chloe-version.webp'$$,
+  $$values ('11111111-1111-1111-1111-111111111111/participants/chloe-version.webp'::text)$$,
+  'participant deletion durably queues its portrait before returning'
+);
+select lives_ok($$select public.queue_media_cleanup('12222222-2222-2222-2222-222222222222', '12222222-2222-2222-2222-222222222222/background-old.webp')$$, 'another event can have an independent cleanup queue');
+select throws_ok($$select public.ack_media_cleanup('11111111-1111-1111-1111-111111111111', array['12222222-2222-2222-2222-222222222222/background-old.webp'])$$, 'P0001', 'invalid_media_cleanup_path', 'cleanup acknowledgement rejects a path from another event');
+reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);

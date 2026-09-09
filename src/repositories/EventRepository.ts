@@ -39,6 +39,7 @@ export interface EventRepository {
   setTeamTieBreakOrder(eventId: string, orderedTeamIds: string[]): Promise<void>;
   uploadEventBackground(file: File, eventId: string): Promise<string>;
   uploadParticipantPhoto(file: File, eventId: string, participantId: string): Promise<string>;
+  cleanupPendingMedia(eventId: string): Promise<void>;
   removeMedia(url: string): Promise<void>;
   revealParticipant(eventId: string, participantId: string): Promise<{ participantId: string; teamId: string }>;
   applyScore(input: { eventId: string; teamId: string; points: number; keys: number; source: string; idempotencyKey: string }): Promise<void>;

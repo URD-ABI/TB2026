@@ -96,7 +96,7 @@ describe("ParticipantsEditor", () => {
     );
   });
 
-  it("nettoie l'ancien portrait après persistance et compense le nouveau si elle échoue", async () => {
+  it("laisse la mutation mettre l'ancien portrait en file et compense le nouveau si elle échoue", async () => {
     const user = userEvent.setup();
     const oldUrl = "https://media.example/event-1/participants/p-1-old.webp";
     const newUrl = "https://media.example/event-1/participants/p-1-new.webp";
@@ -116,10 +116,10 @@ describe("ParticipantsEditor", () => {
     const row = screen.getByRole("group", { name: /alice/i });
 
     await user.upload(within(row).getByLabelText(/photo/i), new File(["first"], "first.png", { type: "image/png" }));
-    expect(removeMedia).toHaveBeenNthCalledWith(1, oldUrl);
+    expect(removeMedia).not.toHaveBeenCalled();
 
     await user.upload(within(row).getByLabelText(/photo/i), new File(["second"], "second.png", { type: "image/png" }));
-    expect(removeMedia).toHaveBeenNthCalledWith(2, `${newUrl}?retry=2`);
+    expect(removeMedia).toHaveBeenCalledWith(`${newUrl}?retry=2`);
   });
 
   it("réordonne les participants en transmettant tous les identifiants", async () => {
