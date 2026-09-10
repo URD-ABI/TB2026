@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useEventContext } from "../../app/AppProviders";
-import { ChallengeTile } from "./ChallengeTile";
+import { ChallengesCarousel } from "./ChallengesCarousel";
 import "./challenges.css";
 
 export function ChallengesPage() {
@@ -18,16 +18,7 @@ export function ChallengesPage() {
         <p>Adresse, esprit d’équipe et audace ouvriront les portes de la forteresse.</p>
       </header>
 
-      <div className="challenges-page__grid">
-        {challenges.map((challenge, index) => (
-          <ChallengeTile
-            key={challenge.id}
-            challenge={challenge}
-            number={index + 1}
-            featured={index === 0}
-          />
-        ))}
-      </div>
+      <ChallengesCarousel challenges={challenges} />
     </section>
   );
 }

@@ -9,10 +9,9 @@ type ChallengeStyle = CSSProperties & {
 type ChallengeTileProps = {
   challenge: Challenge;
   number: number;
-  featured: boolean;
 };
 
-export function ChallengeTile({ challenge, number, featured }: ChallengeTileProps) {
+export function ChallengeTile({ challenge, number }: ChallengeTileProps) {
   const background = toSafeCssBackground(challenge.imageUrl);
   const style: ChallengeStyle | undefined = background
     ? { "--challenge-image": background }
@@ -20,7 +19,6 @@ export function ChallengeTile({ challenge, number, featured }: ChallengeTileProp
   const titleId = `challenge-title-${challenge.id}`;
   const className = [
     "challenge-tile",
-    featured ? "challenge-tile--featured" : "",
     background ? "" : "challenge-tile--fallback",
   ].filter(Boolean).join(" ");
 
