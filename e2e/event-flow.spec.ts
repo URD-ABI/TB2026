@@ -26,6 +26,13 @@ test("le carrousel des défis tient dans les écrans de projection sans défilem
   await expect(page.getByRole("heading", { name: "Les cinq défis" })).toBeVisible();
   await expect(page.getByTestId("challenge-tile")).toBeVisible();
 
+  const accessibleStatus = page.locator(".challenges-carousel .visually-hidden");
+  await expect(accessibleStatus).toContainText(/Défi \d sur 5/);
+  const statusBox = await accessibleStatus.boundingBox();
+  expect(statusBox).not.toBeNull();
+  expect(statusBox?.width).toBeLessThanOrEqual(1);
+  expect(statusBox?.height).toBeLessThanOrEqual(1);
+
   const layout = await page.evaluate(() => ({
     viewportHeight: window.innerHeight,
     documentHeight: document.documentElement.scrollHeight,
