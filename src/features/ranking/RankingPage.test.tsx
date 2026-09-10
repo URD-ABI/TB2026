@@ -60,12 +60,13 @@ describe("RankingPage", () => {
 
     const cylinders = await screen.findAllByTestId("team-cylinder");
     expect(cylinders.map((cylinder) => within(cylinder).getByRole("heading", { level: 2 }).textContent)).toEqual([
-      "✦ Lynx d’argent",
-      "✦ Hiboux de givre",
-      "✦ Cerfs dorés",
-      "✦ Renards de braise",
-      "✦ Loups des mers",
+      "Lynx d’argent",
+      "Hiboux de givre",
+      "Cerfs dorés",
+      "Renards de braise",
+      "Loups des mers",
     ]);
+    for (const cylinder of cylinders) expect(cylinder).not.toHaveTextContent("✦");
     expect(cylinders.map((cylinder) => rankMarker(cylinder).textContent)).toEqual(["5", "1", "4", "2", "3"]);
   });
 
@@ -92,11 +93,11 @@ describe("RankingPage", () => {
 
     const after = screen.getAllByTestId("team-cylinder");
     expect(after.map((cylinder) => within(cylinder).getByRole("heading", { level: 2 }).textContent)).toEqual([
-      "✦ Lynx d’argent",
-      "✦ Hiboux de givre",
-      "✦ Cerfs dorés",
-      "✦ Renards de braise",
-      "✦ Loups des mers",
+      "Lynx d’argent",
+      "Hiboux de givre",
+      "Cerfs dorés",
+      "Renards de braise",
+      "Loups des mers",
     ]);
     expect(after.map((cylinder) => rankMarker(cylinder).textContent)).toEqual(["2", "3", "4", "5", "1"]);
   });

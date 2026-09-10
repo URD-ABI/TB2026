@@ -60,10 +60,7 @@ export function TeamCylinder({ entry, maximum }: TeamCylinderProps) {
       </div>
 
       <div className="team-cylinder__identity">
-        <h2 className="team-cylinder__name" id={nameId}>
-          <span className="team-cylinder__emblem" aria-hidden="true">{team.emblem}</span>{" "}
-          {team.name}
-        </h2>
+        <h2 className="team-cylinder__name" id={nameId}>{team.name}</h2>
         <p className="team-cylinder__keys">
           <span aria-hidden="true">⚿</span>{" "}
           {team.keys} {team.keys === 1 ? "clé" : "clés"}

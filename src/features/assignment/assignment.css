@@ -169,9 +169,11 @@
   box-shadow: 0 0 0 2px var(--team-color), 0 0 34px color-mix(in srgb, var(--team-color) 56%, transparent);
 }
 
-.team-reel__emblem {
+.team-reel__name {
   color: var(--team-color);
-  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 2vw, 1.35rem);
+  font-weight: 700;
   text-shadow: 0 0 18px currentColor;
 }
 
@@ -189,17 +191,14 @@
   background: linear-gradient(155deg, color-mix(in srgb, var(--team-color) 15%, rgba(12, 31, 45, 0.92)), rgba(4, 15, 25, 0.92));
 }
 
-.team-composition h2 {
+.team-composition__name {
   min-height: 2.8rem;
   margin: 0 0 0.65rem;
-  color: #fff8e8;
+  color: var(--team-color);
   font-family: var(--font-display);
   font-size: clamp(0.9rem, 1.5vw, 1.15rem);
   text-align: center;
-}
-
-.team-composition h2 span {
-  color: var(--team-color);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--team-color) 58%, transparent);
 }
 
 .team-composition__members {
@@ -276,14 +275,6 @@
   animation: reveal-overlay 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.assignment-result-overlay__emblem {
-  position: absolute;
-  top: 1.5rem;
-  color: var(--brass-bright);
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  text-shadow: 0 0 24px currentColor;
-}
-
 .assignment-result-overlay__portrait {
   width: clamp(8rem, 22vw, 13rem);
 }
@@ -300,11 +291,12 @@
   font-style: italic;
 }
 
-.assignment-result-overlay strong {
-  color: var(--brass-bright);
+.assignment-result-overlay__team-name {
+  color: var(--team-color);
   font-family: var(--font-display);
   font-size: clamp(2rem, 6vw, 4rem);
   line-height: 1.05;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--team-color) 60%, transparent);
 }
 
 .assignment-result-overlay button {

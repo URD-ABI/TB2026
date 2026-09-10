@@ -215,17 +215,13 @@
 
 .team-cylinder__name {
   margin: 0;
-  color: #fff8e8;
+  color: var(--team-color);
   font-family: var(--font-display);
   font-size: clamp(0.94rem, 1.45vw, 1.25rem);
   font-weight: 600;
   line-height: 1.15;
   overflow-wrap: anywhere;
-}
-
-.team-cylinder__emblem {
-  color: var(--team-color);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--team-color) 62%, transparent));
+  text-shadow: 0 0 6px color-mix(in srgb, var(--team-color) 62%, transparent);
 }
 
 .team-cylinder__keys {

@@ -92,8 +92,10 @@ describe("AssignmentPage", () => {
     expect(within(reel).getAllByTestId("reel-team")).toHaveLength(5);
     expect(within(compositions).getAllByTestId("team-composition")).toHaveLength(5);
     for (const team of teams) {
-      expect(within(reel).getByText(team.name)).toBeVisible();
-      expect(within(compositions).getByRole("heading", { name: team.name })).toBeVisible();
+      expect(within(reel).getByText(team.name)).toHaveClass("team-reel__name");
+      expect(within(compositions).getByRole("heading", { name: team.name })).toHaveClass("team-composition__name");
+      expect(within(reel).queryByText(team.emblem)).not.toBeInTheDocument();
+      expect(within(compositions).queryByText(team.emblem)).not.toBeInTheDocument();
     }
   });
 
@@ -184,7 +186,8 @@ describe("AssignmentPage", () => {
     expect(resultOverlay).toHaveAttribute("aria-modal", "true");
     expect(resultOverlay).toHaveClass("assignment-result-overlay");
     expect(within(resultOverlay).getByText("Alice Durand")).toBeInTheDocument();
-    expect(within(resultOverlay).getByText("Loups des mers")).toBeInTheDocument();
+    expect(within(resultOverlay).getByText("Loups des mers")).toHaveClass("assignment-result-overlay__team-name");
+    expect(within(resultOverlay).queryByText("M")).not.toBeInTheDocument();
     expect(within(resultOverlay).queryByText("Benoît Leroy")).not.toBeInTheDocument();
 
     fireEvent.click(within(resultOverlay).getByRole("button", { name: /participant suivant/i }));

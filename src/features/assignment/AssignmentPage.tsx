@@ -279,7 +279,7 @@ export function AssignmentPage() {
               key={team.id}
               style={{ "--team-color": team.color } as React.CSSProperties}
             >
-              <h2><span aria-hidden="true">{team.emblem}</span> {team.name}</h2>
+              <h2 className="team-composition__name">{team.name}</h2>
               <div className="team-composition__members">
                 {members.map((participant) => (
                   <ParticipantToken
@@ -299,12 +299,15 @@ export function AssignmentPage() {
       {result && resultTeam && (
         <div className="assignment-result-overlay" role="dialog" aria-modal="true" aria-label={`Attribution de ${result.participant.name}`} onKeyDown={keepFocusInDialog}>
           <div className="assignment-result-overlay__light" aria-hidden="true" />
-          <div className="assignment-result-overlay__card" data-testid="assignment-result">
-            <span className="assignment-result-overlay__emblem" aria-hidden="true">{resultTeam.emblem}</span>
+          <div
+            className="assignment-result-overlay__card"
+            data-testid="assignment-result"
+            style={{ "--team-color": resultTeam.color } as React.CSSProperties}
+          >
             <ParticipantPortrait participant={result.participant} className="assignment-result-overlay__portrait" />
             <p className="assignment-result-overlay__name">{result.participant.name}</p>
             <p className="assignment-result-overlay__joins">rejoint</p>
-            <strong>{resultTeam.name}</strong>
+            <strong className="assignment-result-overlay__team-name">{resultTeam.name}</strong>
             <button ref={nextButtonRef} type="button" onClick={showNextParticipant}>Participant suivant</button>
           </div>
         </div>

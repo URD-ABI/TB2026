@@ -21,8 +21,7 @@ export function TeamReel({ teams, activeTeamId, visitedTeamIds, reducedMotion }:
             key={team.id}
             style={{ "--team-color": team.color } as React.CSSProperties}
           >
-            <span className="team-reel__emblem" aria-hidden="true">{team.emblem}</span>
-            <span>{team.name}</span>
+            <span className="team-reel__name">{team.name}</span>
           </li>
         ))}
       </ul>
