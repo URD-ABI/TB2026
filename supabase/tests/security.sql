@@ -1,6 +1,6 @@
 begin;
 
-select plan(316);
+select plan(324);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -24,6 +24,7 @@ select has_column('public', 'events', 'slug', 'events has a slug');
 select has_column('public', 'events', 'title', 'events has a title');
 select has_column('public', 'events', 'subtitle', 'events has a subtitle');
 select has_column('public', 'events', 'quiz_enabled', 'events has quiz_enabled');
+select has_column('public', 'events', 'score_capacity', 'events has score capacity');
 select has_column('public', 'events', 'created_at', 'events has created_at');
 select has_column('public', 'teams', 'id', 'teams has an id');
 select has_column('public', 'teams', 'event_id', 'teams belongs to an event');
@@ -68,15 +69,18 @@ select has_column('public', 'quiz_answers', 'correct', 'quiz answers has correct
 select has_column('public', 'quiz_answers', 'score_event_id', 'quiz answers may link its score event');
 
 select col_type_is('public', 'events', 'id', 'uuid', 'events.id is UUID');
+select col_type_is('public', 'events', 'score_capacity', 'integer', 'event score capacity is integer');
 select col_type_is('public', 'teams', 'color', 'text', 'teams.color is text');
 select col_type_is('public', 'quiz_sessions', 'team_order', 'uuid[]', 'quiz_sessions.team_order is UUID array');
 select col_not_null('public', 'events', 'slug', 'event slug is required');
 select col_not_null('public', 'events', 'title', 'event title is required');
+select col_not_null('public', 'events', 'score_capacity', 'event score capacity is required');
 select col_not_null('public', 'teams', 'event_id', 'team event is required');
 select col_not_null('public', 'score_events', 'idempotency_key', 'score idempotency key is required');
 select col_not_null('public', 'participants', 'reveal_order', 'participant reveal order is required');
 select col_not_null('public', 'quiz_questions', 'points', 'question points is required');
 select col_default_is('public', 'events', 'quiz_enabled', 'false', 'quiz is disabled by default');
+select col_default_is('public', 'events', 'score_capacity', '100', 'event score capacity defaults to 100');
 select col_default_is('public', 'quiz_sessions', 'answer_visible', 'false', 'answers are hidden by default');
 
 -- RPC surface and definer hardening.
@@ -351,7 +355,9 @@ select has_function('public', 'set_team_tie_break_order', array['uuid', 'uuid[]'
 select has_function('public', 'create_participant', array['uuid', 'uuid', 'text', 'text', 'uuid', 'integer']::text[], 'transactional participant creation has the required signature');
 select has_function('public', 'update_participant', array['uuid', 'uuid', 'text', 'text', 'uuid']::text[], 'transactional participant update has the required signature');
 select has_function('public', 'delete_participant', array['uuid', 'uuid']::text[], 'transactional participant deletion has the required signature');
-select has_function('public', 'update_event', array['uuid', 'text', 'text', 'text', 'text', 'boolean']::text[], 'transactional event update has the required signature');
+select has_function('public', 'update_event', array['uuid', 'text', 'text', 'text', 'text', 'boolean', 'integer']::text[], 'transactional event update has the required signature');
+select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'update_event' and oidvectortypes(p.proargtypes) = 'uuid, text, text, text, text, boolean, integer'), array['p_event_id', 'p_slug', 'p_title', 'p_subtitle', 'p_background_path', 'p_quiz_enabled', 'p_score_capacity']::text[], 'update_event exposes the expected parameter names');
+select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'update_event' and oidvectortypes(p.proargtypes) = 'uuid, text, text, text, text, boolean, integer'), true, 'update_event is security definer');
 select has_function('public', 'queue_media_cleanup', array['uuid', 'text']::text[], 'media cleanup enqueue has the required signature');
 select has_function('public', 'list_media_cleanup', array['uuid']::text[], 'media cleanup listing has the required signature');
 select has_function('public', 'ack_media_cleanup', array['uuid', 'text[]']::text[], 'media cleanup acknowledgement has the required signature');
@@ -381,7 +387,7 @@ select throws_ok($$select public.set_team_tie_break_order('11111111-1111-1111-11
 select throws_ok($$select public.create_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000010', 'Blocked', null, '20000000-0000-0000-0000-000000000001', 3)$$, '42501', null, 'anon cannot create a participant assignment');
 select throws_ok($$select public.update_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001', 'Blocked', null, '20000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot update a participant assignment');
 select throws_ok($$select public.delete_participant('11111111-1111-1111-1111-111111111111', '30000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot delete a participant');
-select throws_ok($$select public.update_event('11111111-1111-1111-1111-111111111111', 'security-test', 'Blocked', '', null, false)$$, '42501', null, 'anon cannot update an event through the transactional mutation');
+select throws_ok($$select public.update_event('11111111-1111-1111-1111-111111111111', 'security-test', 'Blocked', '', null, false, 100)$$, '42501', null, 'anon cannot update an event through the transactional mutation');
 select throws_ok($$select public.queue_media_cleanup('11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111/background-new.webp')$$, '42501', null, 'anon cannot enqueue media cleanup');
 select throws_ok($$select public.list_media_cleanup('11111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot list media cleanup');
 select throws_ok($$select public.ack_media_cleanup('11111111-1111-1111-1111-111111111111', array['11111111-1111-1111-1111-111111111111/background-new.webp'])$$, '42501', null, 'anon cannot acknowledge media cleanup');
@@ -398,9 +404,11 @@ select results_eq(
   $$values ('11111111-1111-1111-1111-111111111111/background-new.webp'::text)$$,
   'the newly uploaded background is pending cleanup before persistence'
 );
-select lives_ok($$select public.update_event('11111111-1111-1111-1111-111111111111', 'security-test', 'Updated event', 'Subtitle', '11111111-1111-1111-1111-111111111111/background-new.webp', false)$$, 'event update atomically swaps cleanup ownership');
+select lives_ok($$select public.update_event('11111111-1111-1111-1111-111111111111', 'security-test', 'Updated event', 'Subtitle', '11111111-1111-1111-1111-111111111111/background-new.webp', false, 125)$$, 'event update atomically swaps cleanup ownership');
+select throws_ok($$select public.update_event('11111111-1111-1111-1111-111111111111', 'security-test', 'Invalid capacity', 'Subtitle', null, false, 0)$$, 'P0001', 'score_capacity_must_be_positive', 'event update rejects a non-positive score capacity');
 reset role;
 select is((select background_path from public.events where id = '11111111-1111-1111-1111-111111111111'), '11111111-1111-1111-1111-111111111111/background-new.webp', 'event update stores the new background');
+select is((select score_capacity from public.events where id = '11111111-1111-1111-1111-111111111111'), 125, 'event update persists score capacity');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
 select results_eq(
