@@ -54,17 +54,6 @@ function ParticipantToken({
   const label = `${participant.name} — ${team.name}`;
   const newClass = isNew ? " participant-token--new" : "";
 
-  if (participant.photoUrl) {
-    return (
-      <img
-        className={`participant-token${newClass}`}
-        src={participant.photoUrl}
-        alt={label}
-        title={participant.name}
-      />
-    );
-  }
-
   return (
     <span
       className={`participant-token participant-token--initials${newClass}`}

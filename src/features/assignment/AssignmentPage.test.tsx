@@ -159,7 +159,7 @@ describe("AssignmentPage", () => {
     expect(screen.getByTestId("assignment-result")).toHaveTextContent("Loups des mers");
   });
 
-  it("glisse automatiquement le portrait révélé dans la bonne composition", async () => {
+  it("glisse automatiquement les initiales du participant révélé dans la bonne composition", async () => {
     renderAssignment();
     await flushInitialSnapshot();
 
@@ -167,11 +167,10 @@ describe("AssignmentPage", () => {
     await finishCeremony();
 
     const loups = screen.getByRole("article", { name: "Composition Loups des mers" });
-    expect(within(loups).getByRole("img", { name: "Alice Durand — Loups des mers" })).toHaveAttribute(
-      "src",
-      "https://example.test/alice.jpg",
-    );
-    expect(within(loups).getByRole("img", { name: "Alice Durand — Loups des mers" })).toHaveClass("participant-token--new");
+    const token = within(loups).getByLabelText("Alice Durand — Loups des mers");
+    expect(token).toHaveTextContent(/^AD$/);
+    expect(token).toHaveClass("participant-token--initials", "participant-token--new");
+    expect(within(loups).queryByRole("img", { name: "Alice Durand — Loups des mers" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Benoît Leroy" })).toBeInTheDocument();
   });
 
@@ -196,7 +195,7 @@ describe("AssignmentPage", () => {
     expect(screen.getByRole("heading", { name: "Benoît Leroy" })).toBeInTheDocument();
   });
 
-  it("conserve brièvement l’animation du portrait dans la composition après la fermeture du résultat", async () => {
+  it("conserve brièvement l’animation des initiales dans la composition après la fermeture du résultat", async () => {
     renderAssignment();
     await flushInitialSnapshot();
 
@@ -207,13 +206,13 @@ describe("AssignmentPage", () => {
     fireEvent.click(within(resultOverlay).getByRole("button", { name: /participant suivant/i }));
 
     const loups = screen.getByRole("article", { name: "Composition Loups des mers" });
-    const portrait = within(loups).getByRole("img", { name: "Alice Durand — Loups des mers" });
-    expect(portrait).toHaveClass("participant-token--new");
+    const token = within(loups).getByLabelText("Alice Durand — Loups des mers");
+    expect(token).toHaveClass("participant-token--initials", "participant-token--new");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
-    expect(portrait).not.toHaveClass("participant-token--new");
+    expect(token).not.toHaveClass("participant-token--new");
   });
 
   it("avance localement lorsque la révélation réussit avant le prochain instantané temps réel", async () => {
@@ -227,7 +226,7 @@ describe("AssignmentPage", () => {
     await finishCeremony();
 
     const loups = screen.getByRole("article", { name: "Composition Loups des mers" });
-    expect(within(loups).getByRole("img", { name: "Alice Durand — Loups des mers" })).toBeInTheDocument();
+    expect(within(loups).getByLabelText("Alice Durand — Loups des mers")).toHaveTextContent(/^AD$/);
 
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /participant suivant/i }));
     expect(screen.getByRole("heading", { name: "Benoît Leroy" })).toBeInTheDocument();
@@ -317,7 +316,7 @@ describe("AssignmentPage", () => {
     await finishCeremony();
 
     const loups = screen.getByRole("article", { name: "Composition Loups des mers" });
-    expect(within(loups).getByRole("img", { name: "Alice Durand — Loups des mers" }))
+    expect(within(loups).getByLabelText("Alice Durand — Loups des mers"))
       .not.toHaveClass("participant-token--new");
     expect(screen.getByTestId("team-reel")).toHaveAttribute("data-motion", "reduced");
   });
