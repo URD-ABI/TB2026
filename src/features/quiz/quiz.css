@@ -94,6 +94,33 @@
   opacity: 0.58;
 }
 
+.quiz-category--played {
+  border-color: rgba(232, 200, 117, 0.28);
+  filter: saturate(0.32) brightness(0.62);
+}
+
+.quiz-category--played .quiz-category__button:disabled {
+  filter: none;
+  opacity: 1;
+}
+
+.quiz-category__complete {
+  position: absolute;
+  z-index: 1;
+  top: 1rem;
+  right: 1rem;
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border: 1px solid var(--brass-bright, #e8c875);
+  border-radius: 50%;
+  color: var(--brass-bright, #e8c875);
+  background: rgba(5, 10, 23, 0.78);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
 .question-stage {
   display: grid;
   min-height: min(62vh, 620px);

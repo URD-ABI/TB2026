@@ -18,13 +18,18 @@ export function CategoryGrid({ categories, disabled, pendingCategoryId, onChoose
         .slice(0, 6)
         .map((category, index) => {
           const background = toSafeCssBackground(category.imageUrl);
+          const isPlayed = category.status === "played";
+          const isInProgress = !isPlayed && category.chosenByTeamId !== null;
           return <article
-            className={`quiz-category${background ? "" : " quiz-category--fallback"}`}
+            className={`quiz-category${background ? "" : " quiz-category--fallback"}${isPlayed ? " quiz-category--played" : ""}`}
             data-testid="quiz-category"
             key={category.id}
             style={background ? { "--quiz-category-image": background } as CSSProperties : undefined}
           >
             <span className="quiz-category__number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            {isPlayed ? (
+              <span className="quiz-category__complete" data-testid="quiz-category-complete" aria-hidden="true">✓</span>
+            ) : null}
             <button
               className="quiz-category__button"
               type="button"
@@ -33,9 +38,7 @@ export function CategoryGrid({ categories, disabled, pendingCategoryId, onChoose
               aria-label={category.title}
             >
               <span>{category.title}</span>
-              {category.status === "played" || category.chosenByTeamId !== null
-                ? <small>Thème déjà choisi</small>
-                : <small>Choisir ce thème</small>}
+              <small>{isPlayed ? "Thème terminé" : isInProgress ? "Thème en cours" : "Choisir ce thème"}</small>
             </button>
           </article>;
         })}

@@ -127,7 +127,12 @@ describe("QuizPage", () => {
   it("désactive un thème joué et toutes les catégories après le choix de l’équipe", async () => {
     const initial = renderQuiz();
 
-    expect(await screen.findByRole("button", { name: /cinéma/i })).toBeDisabled();
+    const playedButton = await screen.findByRole("button", { name: /cinéma/i });
+    const playedCard = playedButton.closest("[data-testid='quiz-category']");
+    expect(playedButton).toBeDisabled();
+    expect(playedCard).toHaveClass("quiz-category--played");
+    expect(within(playedCard as HTMLElement).getByText("Thème terminé")).toBeInTheDocument();
+    expect(within(playedCard as HTMLElement).getByTestId("quiz-category-complete")).toHaveTextContent("✓");
     initial.unmount();
     const chosenSnapshot = makeEventSnapshot({
       event: makeEvent({ quizEnabled: true }), teams,
@@ -146,7 +151,11 @@ describe("QuizPage", () => {
       <AppProviders repository={repository} eventSlug={EVENT_SLUG}><QuizPage /></AppProviders>,
     );
     const grid = await screen.findByRole("region", { name: /thèmes du quiz/i });
+    const inProgressButton = within(grid).getByRole("button", { name: /sortilèges/i });
+    const inProgressCard = inProgressButton.closest("[data-testid='quiz-category']");
     expect(within(grid).getAllByRole("button").every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(within(inProgressCard as HTMLElement).getByText("Thème en cours")).toBeInTheDocument();
+    expect(inProgressCard).not.toHaveClass("quiz-category--played");
   });
 
   it("affiche la question et son barème fixe sans commandes organisateur", async () => {
