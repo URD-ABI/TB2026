@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AdminApp } from "./AdminApp";
 import type { AdminClient } from "./useAdminSession";
@@ -59,7 +59,9 @@ function makeAdminClient(options: {
 function renderAdmin(client: AdminClient, path = "/admin") {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AdminApp auth={client} />
+      <Routes>
+        <Route path="/admin/*" element={<AdminApp auth={client} />} />
+      </Routes>
     </MemoryRouter>,
   );
 }

@@ -59,4 +59,24 @@ describe("App", () => {
     expect(screen.queryByRole("navigation", { name: /navigation principale/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Team Building 2026" })).not.toBeInTheDocument();
   });
+
+  it("rend les éditeurs d’administration dans la route imbriquée de l’application", async () => {
+    const adminAuth = {
+      auth: {
+        getSession: async () => ({ data: { session: { user: { id: "admin-1" } } }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+        signInWithPassword: async () => ({ data: { session: null, user: null }, error: null }),
+        signOut: async () => ({ error: null }),
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: { user_id: "admin-1" }, error: null }) }),
+        }),
+      }),
+    } as unknown as AdminClient;
+
+    renderApp("/tb2026/admin/equipes", [], adminAuth);
+
+    expect(await screen.findByRole("heading", { name: /équipes et scores/i })).toBeInTheDocument();
+  });
 });

@@ -198,12 +198,12 @@ export function AdminWorkspace() {
         </div>
       ) : null}
       <Routes>
-      <Route path="/admin" element={dashboardRoute} />
-      <Route path="/admin/evenement" element={eventRoute} />
-      <Route path="/admin/equipes" element={teamsRoute} />
-      <Route path="/admin/participants" element={participantsRoute} />
-      <Route path="/admin/defis" element={challengesRoute} />
-      <Route path="/admin/quiz" element={quizRoute} />
+      <Route index element={dashboardRoute} />
+      <Route path="evenement" element={eventRoute} />
+      <Route path="equipes" element={teamsRoute} />
+      <Route path="participants" element={participantsRoute} />
+      <Route path="defis" element={challengesRoute} />
+      <Route path="quiz" element={quizRoute} />
       <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
     </>
