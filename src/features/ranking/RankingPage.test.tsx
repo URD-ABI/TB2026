@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AppProviders } from "../../app/AppProviders";
 import type { Team } from "../../domain/types";
 import { MemoryEventRepository } from "../../repositories/MemoryEventRepository";
-import { makeEventSnapshot, makeTeam } from "../../test/fixtures";
+import { makeEvent, makeEventSnapshot, makeTeam } from "../../test/fixtures";
 import { RankingPage } from "./RankingPage";
 
 const EVENT_SLUG = "tournoi-des-arcanes";
@@ -24,8 +24,11 @@ function fiveTeams(overrides: Partial<Team>[] = []): Team[] {
   }));
 }
 
-function renderRanking(teams: Team[]) {
-  const repository = new MemoryEventRepository(makeEventSnapshot({ teams }), {});
+function renderRanking(teams: Team[], scoreCapacity = 100) {
+  const repository = new MemoryEventRepository(makeEventSnapshot({
+    event: makeEvent({ scoreCapacity }),
+    teams,
+  }), {});
   const view = render(
     <AppProviders repository={repository} eventSlug={EVENT_SLUG}>
       <RankingPage />
@@ -159,7 +162,7 @@ describe("RankingPage", () => {
     expect(within(cylinders[1]).getByText("0 clés")).toBeInTheDocument();
   });
 
-  it("borne le sable magique entre 0 % et 100 % relativement au meilleur score", async () => {
+  it("borne le sable magique entre 0 % et 100 % relativement à la capacité fixe", async () => {
     renderRanking(fiveTeams([
       { points: 100 },
       { points: 50 },
@@ -190,7 +193,7 @@ describe("RankingPage", () => {
       { points: 0 },
       { points: -1 },
       { points: 500 },
-    ]));
+    ]), 1000);
 
     const cylinders = await screen.findAllByTestId("team-cylinder");
     expect(cylinders.map((cylinder) => cylinder.style.getPropertyValue("--fill"))).toEqual([
@@ -200,6 +203,26 @@ describe("RankingPage", () => {
       "0%",
       "50%",
     ]);
+  });
+
+  it("utilise la capacité de l’événement indépendamment du meilleur score", async () => {
+    renderRanking(fiveTeams([
+      { points: 150 },
+      { points: 100 },
+      { points: 50 },
+      { points: 1 },
+      { points: 0 },
+    ]), 100);
+
+    const cylinders = await screen.findAllByTestId("team-cylinder");
+    expect(cylinders.map((cylinder) => cylinder.style.getPropertyValue("--fill"))).toEqual([
+      "100%", "100%", "50%", "4%", "0%",
+    ]);
+    expect(within(cylinders[0]).getByText("150 points")).toBeInTheDocument();
+    expect(within(cylinders[2]).getByRole("meter")).toHaveAttribute(
+      "aria-valuetext",
+      "50 % de la capacité de 100 points",
+    );
   });
 
   it("reste lisible par les technologies d’assistance", async () => {

@@ -14,12 +14,12 @@ const podiumClass: Record<number, string | undefined> = {
 
 type TeamCylinderProps = {
   entry: RankedTeam;
-  maximum: number;
+  capacity: number;
 };
 
-export function TeamCylinder({ entry, maximum }: TeamCylinderProps) {
+export function TeamCylinder({ entry, capacity }: TeamCylinderProps) {
   const { team, rank, requiresTieBreak } = entry;
-  const ratio = maximum > 0 ? team.points / maximum : 0;
+  const ratio = capacity > 0 ? team.points / capacity : 0;
   const fill = team.points <= 0
     ? 0
     : Math.max(4, Math.min(100, Math.round(ratio * 100)));
@@ -52,7 +52,7 @@ export function TeamCylinder({ entry, maximum }: TeamCylinderProps) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={fill}
-        aria-valuetext={`${fill} % du meilleur score`}
+        aria-valuetext={`${fill} % de la capacité de ${capacity} points`}
       >
         <div className="team-cylinder__grains" aria-hidden="true" />
         <div className="team-cylinder__shine" aria-hidden="true" />

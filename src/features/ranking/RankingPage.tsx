@@ -6,7 +6,6 @@ import "./ranking.css";
 export function RankingPage() {
   const { snapshot } = useEventContext();
   const entries = rankTeams(snapshot.teams);
-  const maximum = Math.max(0, ...snapshot.teams.map((team) => team.points));
 
   return (
     <section className="ranking-page" aria-labelledby="ranking-title">
@@ -18,7 +17,11 @@ export function RankingPage() {
 
       <div className="ranking-page__cylinders">
         {entries.map((entry) => (
-          <TeamCylinder key={entry.team.id} entry={entry} maximum={maximum} />
+          <TeamCylinder
+            key={entry.team.id}
+            entry={entry}
+            capacity={snapshot.event.scoreCapacity}
+          />
         ))}
       </div>
     </section>
