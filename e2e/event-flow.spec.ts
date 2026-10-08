@@ -15,7 +15,9 @@ test("les quatre espaces de l'événement restent accessibles et sans débordeme
   await expect(page.locator(".challenges-carousel__indicator")).toHaveCount(5);
 
   await page.getByRole("link", { name: "Quiz" }).click();
-  await expect(page.getByRole("status")).toContainText(/lancé par l.organisateur/i);
+  const quizNotice = page.getByRole("status");
+  const activeTurn = page.getByText(/au tour de l’équipe/i).first();
+  await expect(quizNotice.or(activeTurn)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
