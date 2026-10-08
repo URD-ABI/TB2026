@@ -32,19 +32,43 @@ insert into public.quiz_categories (id, event_id, title, image_path, display_ord
 
 insert into public.quiz_questions (id, category_id, prompt, points, display_order) values
   ('60000000-0000-0000-0000-000000000011', '50000000-0000-0000-0000-000000000011', 'Combien de continents compte-t-on habituellement ?', 10, 0),
+  ('60000000-0000-0000-0000-000000000017', '50000000-0000-0000-0000-000000000011', 'Quelle est la capitale du Canada ?', 10, 1),
+  ('60000000-0000-0000-0000-000000000018', '50000000-0000-0000-0000-000000000011', 'Quelle est la langue officielle du Brésil ?', 10, 2),
   ('60000000-0000-0000-0000-000000000012', '50000000-0000-0000-0000-000000000012', 'Qui a réalisé le film Inception ?', 10, 0),
+  ('60000000-0000-0000-0000-000000000019', '50000000-0000-0000-0000-000000000012', 'Dans quel film d’animation rencontre-t-on Elsa et Anna ?', 10, 1),
+  ('60000000-0000-0000-0000-000000000020', '50000000-0000-0000-0000-000000000012', 'Quel acteur interprète Jack Sparrow ?', 10, 2),
   ('60000000-0000-0000-0000-000000000013', '50000000-0000-0000-0000-000000000013', 'Quel groupe a chanté Bohemian Rhapsody ?', 10, 0),
+  ('60000000-0000-0000-0000-000000000021', '50000000-0000-0000-0000-000000000013', 'Combien de notes compte une gamme diatonique ?', 10, 1),
+  ('60000000-0000-0000-0000-000000000022', '50000000-0000-0000-0000-000000000013', 'Quel instrument possède généralement 88 touches ?', 10, 2),
   ('60000000-0000-0000-0000-000000000014', '50000000-0000-0000-0000-000000000014', 'Combien de joueurs une équipe de football aligne-t-elle sur le terrain ?', 10, 0),
+  ('60000000-0000-0000-0000-000000000023', '50000000-0000-0000-0000-000000000014', 'Combien d’anneaux comporte le symbole olympique ?', 10, 1),
+  ('60000000-0000-0000-0000-000000000024', '50000000-0000-0000-0000-000000000014', 'Quelle couleur porte le leader du Tour de France ?', 10, 2),
   ('60000000-0000-0000-0000-000000000015', '50000000-0000-0000-0000-000000000015', 'Quelle planète est surnommée la planète rouge ?', 10, 0),
-  ('60000000-0000-0000-0000-000000000016', '50000000-0000-0000-0000-000000000016', 'Quelle couleur obtient-on en mélangeant le bleu et le jaune ?', 10, 0);
+  ('60000000-0000-0000-0000-000000000025', '50000000-0000-0000-0000-000000000015', 'Quelle est la formule chimique de l’eau ?', 10, 1),
+  ('60000000-0000-0000-0000-000000000026', '50000000-0000-0000-0000-000000000015', 'Quel gaz les plantes absorbent-elles principalement ?', 10, 2),
+  ('60000000-0000-0000-0000-000000000016', '50000000-0000-0000-0000-000000000016', 'Quelle couleur obtient-on en mélangeant le bleu et le jaune ?', 10, 0),
+  ('60000000-0000-0000-0000-000000000027', '50000000-0000-0000-0000-000000000016', 'Comment s’appelle le renne au nez rouge du Père Noël ?', 10, 1),
+  ('60000000-0000-0000-0000-000000000028', '50000000-0000-0000-0000-000000000016', 'Quel est le principe d’un Secret Santa ?', 10, 2);
 
 insert into public.quiz_question_answers (question_id, answer) values
   ('60000000-0000-0000-0000-000000000011', 'Sept'),
+  ('60000000-0000-0000-0000-000000000017', 'Ottawa'),
+  ('60000000-0000-0000-0000-000000000018', 'Le portugais'),
   ('60000000-0000-0000-0000-000000000012', 'Christopher Nolan'),
+  ('60000000-0000-0000-0000-000000000019', 'La Reine des neiges'),
+  ('60000000-0000-0000-0000-000000000020', 'Johnny Depp'),
   ('60000000-0000-0000-0000-000000000013', 'Queen'),
+  ('60000000-0000-0000-0000-000000000021', 'Sept'),
+  ('60000000-0000-0000-0000-000000000022', 'Le piano'),
   ('60000000-0000-0000-0000-000000000014', 'Onze'),
+  ('60000000-0000-0000-0000-000000000023', 'Cinq'),
+  ('60000000-0000-0000-0000-000000000024', 'Jaune'),
   ('60000000-0000-0000-0000-000000000015', 'Mars'),
-  ('60000000-0000-0000-0000-000000000016', 'Vert');
+  ('60000000-0000-0000-0000-000000000025', 'H₂O'),
+  ('60000000-0000-0000-0000-000000000026', 'Le dioxyde de carbone'),
+  ('60000000-0000-0000-0000-000000000016', 'Vert'),
+  ('60000000-0000-0000-0000-000000000027', 'Rudolph'),
+  ('60000000-0000-0000-0000-000000000028', 'Un échange anonyme de cadeaux');
 
 insert into public.quiz_sessions (id, event_id, team_order, current_team_index, active_question_index, answer_visible)
 values (
