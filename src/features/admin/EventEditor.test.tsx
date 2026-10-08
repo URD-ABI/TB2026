@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { makeEvent } from "../../test/fixtures";
@@ -15,6 +15,32 @@ function deferred<T>() {
 }
 
 describe("EventEditor", () => {
+  it("enregistre une capacité entière strictement positive", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<EventEditor event={makeEvent({ scoreCapacity: 100 })} onSave={onSave} uploadBackground={vi.fn()} />);
+
+    const capacity = screen.getByRole("spinbutton", { name: /capacité d’un réceptacle/i });
+    expect(capacity).toHaveValue(100);
+    await user.clear(capacity);
+    await user.type(capacity, "250");
+    await user.click(screen.getByRole("button", { name: /enregistrer l’événement/i }));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ scoreCapacity: 250 }));
+  });
+
+  it.each(["", "0", "-1", "1.5"])("refuse la capacité invalide %s", (value) => {
+    const onSave = vi.fn();
+    render(<EventEditor event={makeEvent()} onSave={onSave} uploadBackground={vi.fn()} />);
+
+    const capacity = screen.getByRole("spinbutton", { name: /capacité d’un réceptacle/i });
+    fireEvent.change(capacity, { target: { value } });
+    fireEvent.submit(capacity.closest("form") as HTMLFormElement);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/capacité.*nombre entier.*supérieur à zéro/i);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("enregistre un titre valide et ne confirme qu'après la réponse du dépôt", async () => {
     const user = userEvent.setup();
     const pending = deferred<void>();

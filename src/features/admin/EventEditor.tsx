@@ -33,6 +33,10 @@ export function EventEditor({ event, onSave, uploadBackground, removeMedia = asy
       setValidationError("Le titre et le sous-titre doivent contenir au maximum 80 caractères.");
       return;
     }
+    if (!Number.isInteger(draft.scoreCapacity) || draft.scoreCapacity <= 0) {
+      setValidationError("La capacité doit être un nombre entier supérieur à zéro.");
+      return;
+    }
     setValidationError(null);
     await save.run(() => onSave({ ...draft, title: draft.title.trim(), subtitle: draft.subtitle.trim() }));
   };
@@ -95,6 +99,19 @@ export function EventEditor({ event, onSave, uploadBackground, removeMedia = asy
         <label>
           Sous-titre
           <input value={draft.subtitle} onChange={(event) => setDraft({ ...draft, subtitle: event.target.value })} />
+        </label>
+        <label>
+          Capacité d’un réceptacle (points)
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={Number.isFinite(draft.scoreCapacity) ? draft.scoreCapacity : ""}
+            onChange={(event) => setDraft({
+              ...draft,
+              scoreCapacity: event.target.value === "" ? Number.NaN : Number(event.target.value),
+            })}
+          />
         </label>
         <button type="submit" disabled={save.state === "saving"}>Enregistrer l’événement</button>
       </form>
