@@ -1,6 +1,6 @@
 begin;
 
-select plan(324);
+select plan(325);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -114,6 +114,11 @@ select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_
 select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_categories'), 'quiz categories is in supabase_realtime');
 select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_questions'), 'quiz questions is in supabase_realtime');
 select ok(exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quiz_sessions'), 'quiz sessions is in supabase_realtime');
+select is(
+  (select count(*) from public.events where background_path is not null and background_path not like id::text || '/%'),
+  0::bigint,
+  'seeded event backgrounds use event-scoped storage paths'
+);
 
 -- Public content has an explicit SELECT policy for both client roles.
 select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'events' and cmd = 'SELECT' and roles @> array['anon'::name, 'authenticated'::name]), 'events public read policy exists');

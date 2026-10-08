@@ -4,7 +4,7 @@ values (
   'team-building-2026',
   'Team Building 2026',
   'Team Building 2026',
-  'event-media/backgrounds/team-building-2026.jpg',
+  '10000000-0000-0000-0000-000000000001/background.webp',
   true
 );
 
