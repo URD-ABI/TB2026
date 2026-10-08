@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AppProviders } from "../../app/AppProviders";
 import type { AdminParticipant } from "../../domain/types";
@@ -43,7 +43,9 @@ function renderWorkspace(repository: EventRepository) {
   return render(
     <MemoryRouter initialEntries={["/admin/participants"]}>
       <AppProviders repository={repository} eventSlug="tournoi-des-arcanes">
-        <AdminWorkspace />
+        <Routes>
+          <Route path="/admin/*" element={<AdminWorkspace />} />
+        </Routes>
       </AppProviders>
     </MemoryRouter>,
   );
