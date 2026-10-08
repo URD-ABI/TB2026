@@ -13,16 +13,20 @@
 - Ajouter des points et une clé : le classement projeté se met à jour sans rechargement.
 - Tester une égalité points/clés, enregistrer le départage, puis vérifier les rangs.
 - Révéler deux participants et contrôler leur déplacement dans la bonne équipe.
-- Activer le quiz : le lien apparaît sur l’affichage public.
-- Démarrer le quiz : l’ordre correspond au classement figé.
-- Choisir un thème, révéler la réponse, valider une bonne puis une mauvaise réponse.
+- Ouvrir `/quiz` sur l’affichage public et `/admin/quiz` sur l’ordinateur de pilotage.
+- Activer puis démarrer le quiz ; vérifier que l’ordre correspond au classement figé.
+- Choisir un thème depuis l’écran public et vérifier l’ouverture immédiate de sa première question.
+- Révéler puis valider successivement les trois réponses ; vérifier le passage automatique aux questions 2 et 3.
+- Après la troisième réponse, vérifier le retour à la grille pour l’équipe suivante.
+- Vérifier que le thème joué est assombri, coché, libellé « Thème terminé » et impossible à sélectionner.
+- Vérifier qu’une bonne réponse ajoute 10 points et qu’une mauvaise réponse n’en ajoute aucun.
 - Annuler une opération de score depuis l’historique et vérifier la projection.
 
 ## Réinitialisation après répétition
 
 - Saisir exactement `REINITIALISER` dans Sauvegarde et répétition.
-- Vérifier que scores, clés, révélations et progression du quiz sont effacés.
-- Vérifier que équipes, participants, affectations, défis, thèmes, questions et médias sont conservés.
+- Vérifier que la session, les scores, les clés, les révélations et les thèmes joués sont effacés.
+- Vérifier que équipes, participants, affectations, défis, thèmes, les dix-huit questions éditoriales et médias sont conservés.
 - Faire un nouvel export JSON daté.
 
 ## Affichage

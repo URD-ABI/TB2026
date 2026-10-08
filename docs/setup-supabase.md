@@ -28,6 +28,23 @@ insert into public.admin_users (user_id)
 values ('USER_UUID_FROM_AUTH_USERS');
 ```
 
+### Local quiz rehearsal
+
+1. Open the local Studio URL printed by `supabase status`.
+2. In **Authentication → Users**, create an email/password user chosen by the organizer.
+3. Copy the generated user UUID.
+4. In the SQL editor, run:
+
+   ```sql
+   insert into public.admin_users (user_id)
+   values ('USER_UUID_FROM_AUTH_USERS')
+   on conflict (user_id) do nothing;
+   ```
+
+5. Sign in at `/admin`, resolve any score/key ties in **Équipes et scores**, then start the session in **Quiz**.
+
+Never commit the organizer email, password, local service-role key, or session tokens.
+
 ## Hosted project
 
 Authenticate the CLI, link this checkout to the hosted project, and push the versioned migrations:
