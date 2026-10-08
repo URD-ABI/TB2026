@@ -73,6 +73,7 @@ export type EventConfig = {
   subtitle: string;
   backgroundUrl: string | null;
   quizEnabled: boolean;
+  scoreCapacity: number;
 };
 
 export type RankedTeam = { team: Team; rank: number; requiresTieBreak: boolean };

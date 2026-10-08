@@ -43,6 +43,7 @@ export function mapEventRow(row: Row): EventConfig {
     subtitle: stringValue(row, "subtitle"),
     backgroundUrl: nullableString(row, "background_path"),
     quizEnabled: row.quiz_enabled as boolean,
+    scoreCapacity: row.score_capacity as number,
   };
 }
 
@@ -329,6 +330,7 @@ export class SupabaseEventRepository implements EventRepository {
       p_subtitle: event.subtitle,
       p_background_path: storagePath(event.backgroundUrl),
       p_quiz_enabled: event.quizEnabled,
+      p_score_capacity: event.scoreCapacity,
     }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }

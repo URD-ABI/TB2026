@@ -22,6 +22,7 @@ type QueryCall = {
 const eventRow = {
   id: "event-1", slug: "tournoi-des-arcanes", title: "Le Tournoi des Arcanes",
   subtitle: "Team Building 2026", background_path: "event-1/background.webp", quiz_enabled: true,
+  score_capacity: 100,
 };
 const teamRow = {
   id: "team-1", event_id: "event-1", name: "Hiboux", color: "#112233", emblem: "✦",
@@ -89,6 +90,7 @@ describe("mappers Supabase", () => {
     expect(mapEventRow(eventRow)).toEqual({
       id: "event-1", slug: "tournoi-des-arcanes", title: "Le Tournoi des Arcanes",
       subtitle: "Team Building 2026", backgroundUrl: "event-1/background.webp", quizEnabled: true,
+      scoreCapacity: 100,
     });
   });
 
@@ -207,6 +209,7 @@ describe("SupabaseEventRepository", () => {
     expect(rpc).toHaveBeenCalledWith("update_event", expect.objectContaining({
       p_event_id: "event-1",
       p_background_path: "event-1/background.webp",
+      p_score_capacity: 100,
     }));
     expect(JSON.stringify(rpc.mock.calls)).not.toContain(publicUrl);
   });

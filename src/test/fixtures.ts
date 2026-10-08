@@ -44,6 +44,7 @@ export function makeEvent(overrides: Partial<EventConfig> = {}): EventConfig {
     subtitle: "Team Building 2026",
     backgroundUrl: null,
     quizEnabled: true,
+    scoreCapacity: 100,
     ...overrides,
   };
 }
