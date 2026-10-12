@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AppProviders } from "../../app/AppProviders";
-import type { QuizCategory, QuizQuestion, Team } from "../../domain/types";
+import type { QuizCategory, QuizChoice, QuizQuestion, QuizSession, Team } from "../../domain/types";
 import { MemoryEventRepository } from "../../repositories/MemoryEventRepository";
 import type { EventSnapshot } from "../../repositories/EventRepository";
 import { makeEvent, makeEventSnapshot, makeTeam } from "../../test/fixtures";
@@ -36,23 +36,38 @@ const questions: QuizQuestion[] = [{
   displayOrder: 0,
 }];
 
+const choices: QuizChoice[] = [
+  { id: "choice-a", questionId: "question-1", text: "Une baguette", displayOrder: 0 },
+  { id: "choice-b", questionId: "question-1", text: "Un médaillon", displayOrder: 1 },
+  { id: "choice-c", questionId: "question-1", text: "Une clé", displayOrder: 2 },
+  { id: "choice-d", questionId: "question-1", text: "Un grimoire", displayOrder: 3 },
+];
+
+function makeQuizSession(overrides: Partial<QuizSession> = {}): QuizSession {
+  return {
+    id: "session-1",
+    eventId: "event-1",
+    teamOrder: ["team-c", "team-a", "team-e", "team-d", "team-b"],
+    currentTeamIndex: 0,
+    activeCategoryId: null,
+    activeQuestionIndex: 0,
+    selectedChoiceId: null,
+    choiceLocked: false,
+    answerVisible: false,
+    revealedChoiceId: null,
+    startedAt: "2026-12-18T18:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderQuiz(overrides: Partial<EventSnapshot> = {}) {
   const snapshot = makeEventSnapshot({
     event: makeEvent({ quizEnabled: true }),
     teams,
     categories,
     questions,
-    quizSession: {
-      id: "session-1",
-      eventId: "event-1",
-      teamOrder: ["team-c", "team-a", "team-e", "team-d", "team-b"],
-      currentTeamIndex: 0,
-      activeCategoryId: null,
-      activeQuestionIndex: 0,
-      answerVisible: false,
-      revealedAnswer: null,
-      startedAt: "2026-12-18T18:00:00Z",
-    },
+    choices,
+    quizSession: makeQuizSession(),
     ...overrides,
   });
   const repository = new MemoryEventRepository(snapshot, {});
@@ -84,11 +99,7 @@ describe("QuizPage", () => {
 
   it("affiche un état terminé explicite après le passage de la dernière équipe", async () => {
     renderQuiz({
-      quizSession: {
-        id: "session-1", eventId: "event-1", teamOrder: ["team-c"], currentTeamIndex: 1,
-        activeCategoryId: null, activeQuestionIndex: 0, answerVisible: false,
-        revealedAnswer: null, startedAt: "2026-12-18T18:00:00Z",
-      },
+      quizSession: makeQuizSession({ teamOrder: ["team-c"], currentTeamIndex: 1 }),
     });
 
     expect(await screen.findByRole("status")).toHaveTextContent(/quiz terminé/i);
@@ -139,12 +150,8 @@ describe("QuizPage", () => {
       categories: categories.map((category) => category.id === "category-1"
         ? { ...category, chosenByTeamId: "team-c" }
         : category),
-      questions,
-      quizSession: {
-        id: "session-1", eventId: "event-1", teamOrder: ["team-c", "team-a", "team-e", "team-d", "team-b"],
-        currentTeamIndex: 0, activeCategoryId: null, activeQuestionIndex: 0,
-        answerVisible: false, revealedAnswer: null, startedAt: "2026-12-18T18:00:00Z",
-      },
+      questions, choices,
+      quizSession: makeQuizSession(),
     });
     const repository = new MemoryEventRepository(chosenSnapshot, {});
     render(
@@ -160,11 +167,7 @@ describe("QuizPage", () => {
 
   it("affiche la question et son barème fixe sans commandes organisateur", async () => {
     renderQuiz({
-      quizSession: {
-        id: "session-1", eventId: "event-1", teamOrder: ["team-c", "team-a", "team-e", "team-d", "team-b"],
-        currentTeamIndex: 0, activeCategoryId: "category-1", activeQuestionIndex: 0,
-        answerVisible: false, revealedAnswer: null, startedAt: "2026-12-18T18:00:00Z",
-      },
+      quizSession: makeQuizSession({ activeCategoryId: "category-1" }),
     });
 
     expect(await screen.findByRole("heading", { name: "Quel sort éclaire l’extrémité d’une baguette ?" })).toBeInTheDocument();
@@ -172,25 +175,56 @@ describe("QuizPage", () => {
     expect(screen.queryByRole("button", { name: /révéler|correct|incorrect/i })).not.toBeInTheDocument();
   });
 
-  it("ne montre la réponse copiée que lorsque answerVisible est vrai", async () => {
-    const hidden = renderQuiz({
-      quizSession: {
-        id: "session-1", eventId: "event-1", teamOrder: ["team-c"], currentTeamIndex: 0,
-        activeCategoryId: "category-1", activeQuestionIndex: 0, answerVisible: false,
-        revealedAnswer: "Lumos", startedAt: "2026-12-18T18:00:00Z",
-      },
+  it("enregistre la réponse choisie par l’équipe", async () => {
+    const user = userEvent.setup();
+    const { repository } = renderQuiz({ quizSession: makeQuizSession({ activeCategoryId: "category-1" }) });
+    const select = vi.spyOn(repository, "selectQuizChoice").mockResolvedValue(undefined);
+
+    await user.click(await screen.findByRole("button", { name: "B — Un médaillon" }));
+
+    expect(select).toHaveBeenCalledWith("session-1", "question-1", "choice-b");
+  });
+
+  it("désactive les réponses lorsque le choix est verrouillé", async () => {
+    renderQuiz({ quizSession: makeQuizSession({ activeCategoryId: "category-1", selectedChoiceId: "choice-b", choiceLocked: true }) });
+
+    expect(await screen.findByRole("button", { name: "B — Un médaillon" })).toBeDisabled();
+    expect(screen.getByText("Choix verrouillé")).toBeInTheDocument();
+  });
+
+  it("affiche une mauvaise réponse en rouge et la bonne en vert après révélation", async () => {
+    renderQuiz({
+      quizSession: makeQuizSession({
+        activeCategoryId: "category-1",
+        selectedChoiceId: "choice-b",
+        choiceLocked: true,
+        answerVisible: true,
+        revealedChoiceId: "choice-c",
+      }),
     });
-    expect(await screen.findByText("20 points")).toBeInTheDocument();
-    expect(screen.queryByText("Lumos")).not.toBeInTheDocument();
+
+    expect(await screen.findByRole("button", { name: "B — Un médaillon" })).toHaveClass("question-choice--wrong");
+    expect(screen.getByRole("button", { name: "C — Une clé" })).toHaveClass("question-choice--correct");
+  });
+
+  it("ne révèle pas la bonne réponse avant l’action de l’administrateur", async () => {
+    const hidden = renderQuiz({
+      quizSession: makeQuizSession({ activeCategoryId: "category-1", selectedChoiceId: "choice-c" }),
+    });
+    const selectedBeforeReveal = await screen.findByRole("button", { name: "C — Une clé" });
+    expect(selectedBeforeReveal).toHaveClass("question-choice--selected");
+    expect(selectedBeforeReveal).not.toHaveClass("question-choice--correct");
     hidden.unmount();
 
     renderQuiz({
-      quizSession: {
-        id: "session-1", eventId: "event-1", teamOrder: ["team-c"], currentTeamIndex: 0,
-        activeCategoryId: "category-1", activeQuestionIndex: 0, answerVisible: true,
-        revealedAnswer: "Lumos", startedAt: "2026-12-18T18:00:00Z",
-      },
+      quizSession: makeQuizSession({
+        activeCategoryId: "category-1",
+        selectedChoiceId: "choice-c",
+        choiceLocked: true,
+        answerVisible: true,
+        revealedChoiceId: "choice-c",
+      }),
     });
-    expect(await screen.findByText("Lumos")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "C — Une clé" })).toHaveClass("question-choice--correct");
   });
 });

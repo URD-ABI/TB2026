@@ -8,16 +8,29 @@ import "./quiz.css";
 
 export function QuizPage() {
   const { snapshot, repository } = useEventContext();
-  const { event, teams, categories, questions, quizSession } = snapshot;
+  const { event, teams, categories, questions, choices, quizSession } = snapshot;
   const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
   const [optimisticCategoryId, setOptimisticCategoryId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingChoiceId, setPendingChoiceId] = useState<string | null>(null);
+  const [optimisticChoiceId, setOptimisticChoiceId] = useState<string | null>(null);
+  const [unsyncedChoiceId, setUnsyncedChoiceId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (optimisticCategoryId !== null && quizSession?.activeCategoryId === optimisticCategoryId) {
       setOptimisticCategoryId(null);
     }
   }, [optimisticCategoryId, quizSession?.activeCategoryId]);
+
+  useEffect(() => {
+    const confirmedChoiceId = quizSession?.selectedChoiceId ?? null;
+    if (confirmedChoiceId !== null && (confirmedChoiceId === optimisticChoiceId || confirmedChoiceId === unsyncedChoiceId)) {
+      setOptimisticChoiceId(null);
+      setUnsyncedChoiceId(null);
+      setSelectionError(null);
+    }
+  }, [optimisticChoiceId, quizSession?.selectedChoiceId, unsyncedChoiceId]);
 
   const teamById = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
   const currentTeamId = quizSession?.teamOrder[quizSession.currentTeamIndex];
@@ -29,6 +42,9 @@ export function QuizPage() {
       .sort((left, right) => left.displayOrder - right.displayOrder)
     : [];
   const activeQuestion = categoryQuestions[quizSession?.activeQuestionIndex ?? 0];
+  const activeChoices = activeQuestion
+    ? choices.filter((choice) => choice.questionId === activeQuestion.id)
+    : [];
 
   if (!event.quizEnabled) {
     return <section className="quiz-notice" role="status">Le quiz n’est pas encore accessible.</section>;
@@ -44,13 +60,36 @@ export function QuizPage() {
   }
 
   if (activeCategory && activeQuestion) {
+    const displayedChoiceId = pendingChoiceId ?? unsyncedChoiceId ?? optimisticChoiceId ?? quizSession.selectedChoiceId;
+    const selectChoice = async (choiceId: string) => {
+      setPendingChoiceId(choiceId);
+      setOptimisticChoiceId(choiceId);
+      setUnsyncedChoiceId(null);
+      setSelectionError(null);
+      try {
+        await repository.selectQuizChoice(quizSession.id, activeQuestion.id, choiceId);
+      } catch {
+        setOptimisticChoiceId(null);
+        setUnsyncedChoiceId(choiceId);
+        setSelectionError("Sélection non synchronisée, réessayez.");
+      } finally {
+        setPendingChoiceId(null);
+      }
+    };
     return (
       <QuestionStage
         category={activeCategory}
         question={activeQuestion}
+        choices={activeChoices}
         team={currentTeam}
+        selectedChoiceId={displayedChoiceId}
+        choiceLocked={quizSession.choiceLocked}
         answerVisible={quizSession.answerVisible}
-        revealedAnswer={quizSession.revealedAnswer}
+        revealedChoiceId={quizSession.revealedChoiceId}
+        selectionPending={pendingChoiceId !== null}
+        selectionError={selectionError}
+        onSelect={(choiceId) => void selectChoice(choiceId)}
+        onRetry={() => { if (unsyncedChoiceId) void selectChoice(unsyncedChoiceId); }}
       />
     );
   }
