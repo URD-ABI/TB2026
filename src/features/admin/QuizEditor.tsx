@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import type { AdminQuizQuestion, QuizCategory } from "../../domain/types";
+import { validateAdminQuizChoices } from "../../domain/quiz";
+import type { AdminQuizChoice, AdminQuizQuestion, QuizCategory } from "../../domain/types";
 import { validateImageFile } from "../../lib/images";
 
 export type CreateQuizQuestionInput = Omit<AdminQuizQuestion, "id">;
@@ -81,20 +82,99 @@ function QuestionForm({ question, pending, onChange, onSave, onDelete, onMove }:
   question: AdminQuizQuestion; pending: boolean; onChange(value: AdminQuizQuestion): void;
   onSave(value: AdminQuizQuestion): Promise<boolean>; onDelete(): Promise<boolean>; onMove(direction: -1 | 1): void;
 }) {
-  const submit = (event: FormEvent) => { event.preventDefault(); if (Number.isInteger(question.points) && question.points > 0) void onSave(question); };
+  const choiceValidation = validateAdminQuizChoices(question.choices);
+  const pointsAreValid = Number.isInteger(question.points) && question.points > 0;
+  const canSave = question.prompt.trim() && pointsAreValid && choiceValidation.valid;
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canSave) return;
+    void onSave({
+      ...question,
+      prompt: question.prompt.trim(),
+      choices: [...question.choices]
+        .sort((left, right) => left.displayOrder - right.displayOrder)
+        .map((choice) => ({ ...choice, text: choice.text.trim() })),
+    });
+  };
   return <form className="admin-form admin-question" aria-label={question.prompt} onSubmit={submit}>
     <label>Question<textarea value={question.prompt} onChange={(event) => onChange({ ...question, prompt: event.target.value })} /></label>
-    <label>Réponse<textarea value={question.answer} onChange={(event) => onChange({ ...question, answer: event.target.value })} /></label>
+    <ChoiceFields choices={question.choices} name={`correct-${question.id}`} onChange={(choices) => onChange({ ...question, choices })} />
     <label>Points<input type="number" min="1" step="1" value={question.points} onChange={(event) => onChange({ ...question, points: Number(event.target.value) })} /></label>
-    {(!Number.isInteger(question.points) || question.points <= 0) ? <p className="admin-alert" role="alert">Le nombre de points doit être un entier strictement positif.</p> : null}
-    <button type="submit" disabled={pending}>Enregistrer la question</button><button type="button" disabled={pending} onClick={() => void onDelete()}>Supprimer la question</button>
+    {!pointsAreValid ? <p className="admin-alert" role="alert">Le nombre de points doit être un entier strictement positif.</p> : null}
+    {!choiceValidation.valid ? <p className="admin-alert" role="alert">{choiceValidationMessage(choiceValidation.reason)}</p> : null}
+    <button type="submit" disabled={pending || !canSave}>Enregistrer la question</button><button type="button" disabled={pending} onClick={() => void onDelete()}>Supprimer la question</button>
     <div className="admin-order-controls"><button type="button" disabled={pending} onClick={() => onMove(-1)}>Monter la question</button><button type="button" disabled={pending} onClick={() => onMove(1)}>Descendre la question</button></div>
   </form>;
 }
 
 function NewQuestionForm({ categoryId, displayOrder, pending, onCreate }: { categoryId: string; displayOrder: number; pending: boolean; onCreate(input: CreateQuizQuestionInput): Promise<boolean> }) {
-  const [prompt, setPrompt] = useState(""); const [answer, setAnswer] = useState(""); const [points, setPoints] = useState(10);
-  return <form className="admin-form admin-question admin-question--new" aria-label="Ajouter une question" onSubmit={(event) => { event.preventDefault(); if (prompt.trim() && answer.trim() && Number.isInteger(points) && points > 0) void onCreate({ categoryId, prompt: prompt.trim(), answer: answer.trim(), points, displayOrder }); }}>
-    <h4>Ajouter une question</h4><label>Nouvelle question<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label><label>Nouvelle réponse<textarea value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><label>Points de la nouvelle question<input type="number" min="1" step="1" value={points} onChange={(event) => setPoints(Number(event.target.value))} /></label><button type="submit" disabled={pending || !prompt.trim() || !answer.trim() || points <= 0}>Ajouter</button>
+  const [prompt, setPrompt] = useState("");
+  const [choices, setChoices] = useState(() => createBlankChoices(categoryId));
+  const [points, setPoints] = useState(10);
+  const choiceValidation = validateAdminQuizChoices(choices);
+  const canCreate = Boolean(prompt.trim()) && Number.isInteger(points) && points > 0 && choiceValidation.valid;
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canCreate) return;
+    void (async () => {
+      const created = await onCreate({
+        categoryId,
+        prompt: prompt.trim(),
+        choices: choices.map((choice) => ({ ...choice, text: choice.text.trim() })),
+        points,
+        displayOrder,
+      });
+      if (created) {
+        setPrompt("");
+        setChoices(createBlankChoices(categoryId));
+        setPoints(10);
+      }
+    })();
+  };
+  return <form className="admin-form admin-question admin-question--new" aria-label="Ajouter une question" onSubmit={submit}>
+    <h4>Ajouter une question</h4>
+    <label>Nouvelle question<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label>
+    <ChoiceFields choices={choices} name={`correct-new-${categoryId}`} newQuestion onChange={setChoices} />
+    {!choiceValidation.valid && choices.some((choice) => choice.text.trim()) ? <p className="admin-alert" role="alert">{choiceValidationMessage(choiceValidation.reason)}</p> : null}
+    <label>Points de la nouvelle question<input type="number" min="1" step="1" value={points} onChange={(event) => setPoints(Number(event.target.value))} /></label>
+    <button type="submit" disabled={pending || !canCreate}>Ajouter</button>
   </form>;
+}
+
+function ChoiceFields({ choices, name, newQuestion = false, onChange }: {
+  choices: AdminQuizChoice[];
+  name: string;
+  newQuestion?: boolean;
+  onChange(choices: AdminQuizChoice[]): void;
+}) {
+  const orderedChoices = [...choices].sort((left, right) => left.displayOrder - right.displayOrder);
+  return <div className="admin-choice-grid">
+    {orderedChoices.map((choice) => {
+      const letter = String.fromCharCode(65 + choice.displayOrder);
+      const answerLabel = newQuestion ? `Nouvelle réponse ${letter}` : `Réponse ${letter}`;
+      const correctLabel = newQuestion ? `Bonne réponse nouvelle ${letter}` : `Bonne réponse ${letter}`;
+      return <div className="admin-choice" key={choice.id}>
+        <label>{answerLabel}<input value={choice.text} onChange={(event) => onChange(choices.map((item) => item.id === choice.id ? { ...item, text: event.target.value } : item))} /></label>
+        <label className="admin-choice__correct"><input type="radio" name={name} aria-label={correctLabel} checked={choice.isCorrect} onChange={() => onChange(choices.map((item) => ({ ...item, isCorrect: item.id === choice.id })))} />Bonne réponse</label>
+      </div>;
+    })}
+  </div>;
+}
+
+function createBlankChoices(questionId: string): AdminQuizChoice[] {
+  return Array.from({ length: 4 }, (_, displayOrder) => ({
+    id: crypto.randomUUID(),
+    questionId,
+    text: "",
+    displayOrder,
+    isCorrect: displayOrder === 0,
+  }));
+}
+
+function choiceValidationMessage(reason: "choice_count" | "duplicate_choice" | "correct_choice_count") {
+  return {
+    choice_count: "Renseignez quatre réponses.",
+    duplicate_choice: "Les quatre réponses doivent être différentes.",
+    correct_choice_count: "Choisissez une seule bonne réponse.",
+  }[reason];
 }
