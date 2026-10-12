@@ -168,11 +168,12 @@ export function AdminWorkspace() {
     {quizLoadError ? <p className="admin-alert" role="alert">Chargement des réponses du quiz impossible. Réessayez.</p> : null}
     <QuizControlPanel
       event={context.snapshot.event} teams={context.snapshot.teams} categories={context.snapshot.categories}
-      questions={context.snapshot.questions} session={context.snapshot.quizSession}
+      questions={context.snapshot.questions} choices={context.snapshot.choices} session={context.snapshot.quizSession}
       onToggleAccess={(enabled) => context.repository.updateEvent({ ...context.snapshot.event, quizEnabled: enabled })}
       onStart={(eventId) => context.repository.startQuiz(eventId)}
-      onReveal={(sessionId, questionId) => context.repository.revealQuizAnswer(sessionId, questionId)}
-      onAnswer={(sessionId, questionId, correct, key) => context.repository.answerQuizQuestion(sessionId, questionId, correct, key)}
+      onLock={(sessionId, questionId) => context.repository.lockQuizChoice(sessionId, questionId)}
+      onRevealAndScore={(sessionId, questionId) => context.repository.revealAndScoreQuizAnswer(sessionId, questionId)}
+      onAdvance={(sessionId, questionId) => context.repository.advanceQuizQuestion(sessionId, questionId)}
       onReset={(eventId) => context.repository.resetQuiz(eventId)}
     />
     <QuizEditor

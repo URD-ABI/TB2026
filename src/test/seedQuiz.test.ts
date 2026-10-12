@@ -20,7 +20,7 @@ describe("local quiz seed", () => {
   it("définit trois questions ordonnées pour chacun des six thèmes", () => {
     const questions = between(
       "insert into public.quiz_questions",
-      "insert into public.quiz_question_answers",
+      "insert into public.quiz_question_choices",
     );
 
     for (const categoryId of categoryIds) {
@@ -30,11 +30,18 @@ describe("local quiz seed", () => {
     expect(questions.match(/, 10, [012]\)/g)).toHaveLength(18);
   });
 
-  it("définit une réponse protégée pour chacune des dix-huit questions", () => {
+  it("définit quatre choix et une seule bonne réponse pour chacune des dix-huit questions", () => {
+    expect(seed).toContain("insert into public.quiz_question_choices");
+    expect(seed).not.toContain("insert into public.quiz_question_answers");
     const answers = between(
-      "insert into public.quiz_question_answers",
+      "insert into public.quiz_question_choices",
       "insert into public.quiz_sessions",
     );
-    expect(answers.match(/'60000000-0000-0000-0000-0000000000\d{2}'/g)).toHaveLength(18);
+    const questionIds = answers.match(/'60000000-0000-0000-0000-0000000000\d{2}'/g) ?? [];
+    expect(questionIds).toHaveLength(72);
+    for (const questionId of new Set(questionIds)) {
+      expect(questionIds.filter((candidate) => candidate === questionId)).toHaveLength(4);
+    }
+    expect(answers.match(/, true\)/g)).toHaveLength(18);
   });
 });

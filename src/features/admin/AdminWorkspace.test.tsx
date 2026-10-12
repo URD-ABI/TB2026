@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AppProviders } from "../../app/AppProviders";
-import type { AdminParticipant } from "../../domain/types";
+import type { AdminParticipant, QuizCategory, QuizChoice, QuizQuestion, QuizSession } from "../../domain/types";
 import type { EventRepository, EventSnapshot } from "../../repositories/EventRepository";
 import { makeEventSnapshot, makeParticipant, makeTeam } from "../../test/fixtures";
 import { AdminWorkspace } from "./AdminApp";
@@ -22,14 +22,18 @@ function adminParticipant(id: string, name: string): AdminParticipant {
 function makeWorkspaceRepository(
   getAdminParticipants: EventRepository["getAdminParticipants"],
   cleanupPendingMedia: EventRepository["cleanupPendingMedia"] = vi.fn().mockResolvedValue(undefined),
+  snapshotOverrides: Partial<EventSnapshot> = {},
 ) {
   let emitSnapshot!: (snapshot: EventSnapshot) => void;
-  const initial = makeEventSnapshot({ teams: [makeTeam()] });
+  const initial = makeEventSnapshot({ teams: [makeTeam()], ...snapshotOverrides });
   const repository = {
     cleanupPendingMedia,
     getAdminQuizQuestions: vi.fn().mockResolvedValue([]),
     getScoreHistory: vi.fn().mockResolvedValue([]),
     getAdminParticipants,
+    lockQuizChoice: vi.fn().mockResolvedValue(undefined),
+    revealAndScoreQuizAnswer: vi.fn().mockResolvedValue(undefined),
+    advanceQuizQuestion: vi.fn().mockResolvedValue(undefined),
     resetQuiz: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn((_slug: string, listener: (snapshot: EventSnapshot) => void) => {
       emitSnapshot = listener;
@@ -62,6 +66,31 @@ describe("AdminWorkspace participant refresh", () => {
     await user.click(screen.getByRole("button", { name: /confirmer la réinitialisation/i }));
 
     expect(fake.repository.resetQuiz).toHaveBeenCalledWith(fake.initial.event.id);
+  });
+
+  it("raccorde le verrouillage du choix au dépôt", async () => {
+    const user = userEvent.setup();
+    const quizCategory: QuizCategory = { id: "category-1", eventId: "event-1", title: "Hiver", imageUrl: null, displayOrder: 0, status: "available", chosenByTeamId: null };
+    const quizQuestion: QuizQuestion = { id: "question-1", categoryId: "category-1", prompt: "Question ?", points: 10, displayOrder: 0 };
+    const quizChoices: QuizChoice[] = [
+      { id: "choice-a", questionId: "question-1", text: "A", displayOrder: 0 },
+      { id: "choice-b", questionId: "question-1", text: "B", displayOrder: 1 },
+      { id: "choice-c", questionId: "question-1", text: "C", displayOrder: 2 },
+      { id: "choice-d", questionId: "question-1", text: "D", displayOrder: 3 },
+    ];
+    const quizSession: QuizSession = {
+      id: "session-1", eventId: "event-1", teamOrder: ["team-a"], currentTeamIndex: 0,
+      activeCategoryId: "category-1", activeQuestionIndex: 0, selectedChoiceId: "choice-b",
+      choiceLocked: false, answerVisible: false, revealedChoiceId: null, startedAt: "2026-12-18T10:00:00Z",
+    };
+    const fake = makeWorkspaceRepository(vi.fn().mockResolvedValue([]), undefined, {
+      categories: [quizCategory], questions: [quizQuestion], choices: quizChoices, quizSession,
+    });
+    renderWorkspace(fake.repository, "/admin/quiz");
+
+    await user.click(await screen.findByRole("button", { name: "Verrouiller le choix" }));
+
+    expect(fake.repository.lockQuizChoice).toHaveBeenCalledWith("session-1", "question-1");
   });
 
   it("ignore une réponse obsolète arrivée après le rafraîchissement le plus récent", async () => {
