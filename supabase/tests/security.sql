@@ -1,6 +1,6 @@
 begin;
 
-select plan(343);
+select plan(349);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -13,6 +13,7 @@ select has_table('public', 'challenges', 'challenges table exists');
 select has_table('public', 'quiz_categories', 'quiz_categories table exists');
 select has_table('public', 'quiz_questions', 'quiz_questions table exists');
 select has_table('public', 'quiz_question_answers', 'quiz_question_answers table exists');
+select has_table('public', 'quiz_question_choices', 'quiz choices table exists');
 select has_table('public', 'quiz_sessions', 'quiz_sessions table exists');
 select has_table('public', 'quiz_answers', 'quiz_answers table exists');
 select has_table('public', 'media_cleanup_queue', 'durable media cleanup queue exists');
@@ -60,8 +61,11 @@ select has_column('public', 'quiz_sessions', 'event_id', 'sessions belongs to an
 select has_column('public', 'quiz_sessions', 'team_order', 'sessions stores team UUID order');
 select has_column('public', 'quiz_sessions', 'current_team_index', 'sessions stores the active team index');
 select has_column('public', 'quiz_sessions', 'active_category_id', 'sessions stores active category');
+select has_column('public', 'quiz_sessions', 'selected_choice_id', 'sessions stores current choice');
+select has_column('public', 'quiz_sessions', 'choice_locked', 'sessions stores choice lock');
 select has_column('public', 'quiz_sessions', 'answer_visible', 'sessions records answer visibility');
 select has_column('public', 'quiz_sessions', 'revealed_answer', 'sessions stores an optionally revealed answer');
+select has_column('public', 'quiz_sessions', 'revealed_choice_id', 'sessions stores revealed correct choice');
 select has_column('public', 'quiz_answers', 'session_id', 'quiz answers belongs to a session');
 select has_column('public', 'quiz_answers', 'question_id', 'quiz answers belongs to a question');
 select has_column('public', 'quiz_answers', 'team_id', 'quiz answers belongs to a team');
@@ -132,7 +136,7 @@ select ok(exists (select 1 from pg_policies where schemaname = 'public' and tabl
 -- A client role must never receive secret assignments, answers, or score history.
 select is((select count(*) from pg_policies where schemaname = 'public' and tablename in ('participant_assignments', 'quiz_question_answers', 'quiz_answers', 'score_events', 'admin_users') and cmd in ('SELECT', 'ALL') and roles @> array['anon'::name]), 0::bigint, 'hidden tables have no anon read policy');
 select is((select count(*) from pg_policies where schemaname = 'public' and tablename in ('participant_assignments', 'quiz_question_answers', 'quiz_answers', 'score_events', 'admin_users') and cmd = 'SELECT' and roles @> array['authenticated'::name] and coalesce(qual, '') not like '%is_admin()%'), 0::bigint, 'hidden tables have no non-admin authenticated read policy');
-select is((select count(distinct tablename) from pg_policies where schemaname = 'public' and cmd = 'ALL' and roles @> array['authenticated'::name] and coalesce(qual, '') like '%is_admin()%'), 12::bigint, 'admins have ALL policies on every application table');
+select is((select count(distinct tablename) from pg_policies where schemaname = 'public' and cmd = 'ALL' and roles @> array['authenticated'::name] and coalesce(qual, '') like '%is_admin()%'), 13::bigint, 'admins have ALL policies on every application table');
 
 select is((select public from storage.buckets where id = 'event-media'), true, 'event-media bucket is public for reads');
 select ok(exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and cmd = 'SELECT' and roles @> array['anon'::name, 'authenticated'::name] and coalesce(qual, '') like '%event-media%'), 'event-media storage read policy is public');
@@ -175,6 +179,8 @@ insert into public.participant_assignments (participant_id, team_id) values
   ('30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002');
 
 set local role anon;
+select is((select count(*) from public.quiz_question_choices), 0::bigint, 'anonymous users cannot inspect correct choices');
+select lives_ok($$select * from public.get_public_quiz_choices('11111111-1111-1111-1111-111111111111')$$, 'anonymous users can load safe choices');
 select is((select count(*) from public.events where id = '11111111-1111-1111-1111-111111111111'), 1::bigint, 'anon can read public events');
 select is((select count(*) from public.participant_assignments), 0::bigint, 'anon cannot read hidden assignments');
 select is((select count(*) from public.quiz_question_answers), 0::bigint, 'anon cannot read hidden answers');
