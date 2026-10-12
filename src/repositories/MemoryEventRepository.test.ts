@@ -3,6 +3,30 @@ import { MemoryEventRepository } from "./MemoryEventRepository";
 import { makeEvent, makeEventSnapshot, makeParticipant, makeTeam } from "../test/fixtures";
 
 describe("MemoryEventRepository", () => {
+  const quizCategory = { id: "category-1", eventId: "event-1", title: "Hiver", imageUrl: null, displayOrder: 0, status: "available" as const, chosenByTeamId: "team-a" };
+  const quizQuestion = { id: "question-1", categoryId: "category-1", prompt: "Quel objet ouvre la porte ?", points: 10, displayOrder: 0 };
+  const quizChoices = [
+    { id: "choice-a", questionId: "question-1", text: "Une baguette", displayOrder: 0 },
+    { id: "choice-b", questionId: "question-1", text: "Un médaillon", displayOrder: 1 },
+    { id: "choice-c", questionId: "question-1", text: "Une clé", displayOrder: 2 },
+    { id: "choice-d", questionId: "question-1", text: "Un grimoire", displayOrder: 3 },
+  ];
+
+  function makeQuizRepository() {
+    return new MemoryEventRepository(makeEventSnapshot({
+      event: makeEvent({ quizEnabled: true }),
+      teams: [makeTeam()],
+      categories: [quizCategory],
+      questions: [quizQuestion],
+      choices: quizChoices,
+      quizSession: {
+        id: "session-1", eventId: "event-1", teamOrder: ["team-a"], currentTeamIndex: 0,
+        activeCategoryId: "category-1", activeQuestionIndex: 0, selectedChoiceId: null,
+        choiceLocked: false, answerVisible: false, revealedChoiceId: null, startedAt: "2026-12-18T10:00:00Z",
+      },
+    }), {}, { "question-1": "choice-c" });
+  }
+
   it("émet immédiatement une copie isolée à la souscription", async () => {
     const repository = new MemoryEventRepository(makeEventSnapshot(), {});
     const received: Awaited<ReturnType<typeof repository.getSnapshot>>[] = [];
@@ -77,12 +101,37 @@ describe("MemoryEventRepository", () => {
     expect(received).toHaveLength(2);
   });
 
+  it("sélectionne, remplace, verrouille, révèle et note une bonne réponse une seule fois", async () => {
+    const repository = makeQuizRepository();
+
+    await repository.selectQuizChoice("session-1", "question-1", "choice-b");
+    expect((await repository.getSnapshot("tournoi-des-arcanes")).quizSession?.selectedChoiceId).toBe("choice-b");
+    await repository.selectQuizChoice("session-1", "question-1", "choice-c");
+    expect((await repository.getSnapshot("tournoi-des-arcanes")).quizSession?.selectedChoiceId).toBe("choice-c");
+
+    await repository.lockQuizChoice("session-1", "question-1");
+    await expect(repository.selectQuizChoice("session-1", "question-1", "choice-b")).rejects.toThrow("choice_locked");
+    await repository.revealAndScoreQuizAnswer("session-1", "question-1");
+    await repository.revealAndScoreQuizAnswer("session-1", "question-1");
+
+    const revealed = await repository.getSnapshot("tournoi-des-arcanes");
+    expect(revealed.quizSession).toMatchObject({ answerVisible: true, revealedChoiceId: "choice-c" });
+    expect(revealed.teams[0].points).toBe(10);
+
+    await repository.advanceQuizQuestion("session-1", "question-1");
+    const advanced = await repository.getSnapshot("tournoi-des-arcanes");
+    expect(advanced.categories[0].status).toBe("played");
+    expect(advanced.quizSession).toMatchObject({
+      activeCategoryId: null, currentTeamIndex: 1, selectedChoiceId: null, choiceLocked: false,
+    });
+  });
+
   it("réinitialise seulement le quiz et retire uniquement ses points", async () => {
     const repository = new MemoryEventRepository(makeEventSnapshot({
       event: makeEvent({ quizEnabled: true }),
       teams: [makeTeam({ points: 40, keys: 3, tieBreakPriority: 2 })],
       categories: [{ id: "category-1", eventId: "event-1", title: "Hiver", imageUrl: null, displayOrder: 0, status: "played", chosenByTeamId: "team-a" }],
-      quizSession: { id: "session-1", eventId: "event-1", teamOrder: ["team-a"], currentTeamIndex: 1, activeCategoryId: null, activeQuestionIndex: 0, answerVisible: false, revealedAnswer: null, startedAt: "2026-12-18T10:00:00Z" },
+      quizSession: { id: "session-1", eventId: "event-1", teamOrder: ["team-a"], currentTeamIndex: 1, activeCategoryId: null, activeQuestionIndex: 0, selectedChoiceId: null, choiceLocked: false, answerVisible: false, revealedChoiceId: null, startedAt: "2026-12-18T10:00:00Z" },
     }), {});
     await repository.applyScore({ eventId: "event-1", teamId: "team-a", points: 5, keys: 0, source: "challenge", idempotencyKey: "challenge-1" });
     await repository.applyScore({ eventId: "event-1", teamId: "team-a", points: 10, keys: 0, source: "quiz", idempotencyKey: "quiz-1" });

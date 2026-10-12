@@ -8,10 +8,12 @@ export class MemoryEventRepository implements EventRepository {
   private readonly assignments: Record<string, string>;
   private readonly listeners = new Set<Listener>();
   private readonly appliedScores = new Map<string, Parameters<EventRepository["applyScore"]>[0]>();
+  private readonly correctChoiceIds: Record<string, string>;
 
-  constructor(snapshot: EventSnapshot, assignments: Record<string, string>) {
+  constructor(snapshot: EventSnapshot, assignments: Record<string, string>, correctChoiceIds: Record<string, string> = {}) {
     this.snapshot = structuredClone(snapshot);
     this.assignments = { ...assignments };
+    this.correctChoiceIds = { ...correctChoiceIds };
   }
 
   private clone(): EventSnapshot {
@@ -135,7 +137,12 @@ export class MemoryEventRepository implements EventRepository {
   }
 
   async getAdminQuizQuestions(_eventId: string): Promise<AdminQuizQuestion[]> {
-    return this.snapshot.questions.map((question) => ({ ...question, answer: "" }));
+    return this.snapshot.questions.map((question) => ({
+      ...question,
+      choices: this.snapshot.choices
+        .filter((choice) => choice.questionId === question.id)
+        .map((choice) => ({ ...choice, isCorrect: this.correctChoiceIds[question.id] === choice.id })),
+    }));
   }
 
   async updateQuizCategory(category: QuizCategory): Promise<void> {
@@ -149,17 +156,48 @@ export class MemoryEventRepository implements EventRepository {
   }
 
   async createQuizQuestion(input: CreateQuizQuestionInput): Promise<void> {
-    this.snapshot = { ...this.snapshot, questions: [...this.snapshot.questions, { ...input, id: crypto.randomUUID() }] };
+    const id = crypto.randomUUID();
+    const correct = input.choices.find((choice) => choice.isCorrect);
+    if (!correct) throw new Error("one_correct_choice_required");
+    this.correctChoiceIds[id] = correct.id;
+    this.snapshot = {
+      ...this.snapshot,
+      questions: [...this.snapshot.questions, {
+        id, categoryId: input.categoryId, prompt: input.prompt, points: input.points, displayOrder: input.displayOrder,
+      }],
+      choices: [...this.snapshot.choices, ...input.choices.map((choice) => ({
+        id: choice.id, questionId: id, text: choice.text, displayOrder: choice.displayOrder,
+      }))],
+    };
     this.emit();
   }
 
   async updateQuizQuestion(question: AdminQuizQuestion): Promise<void> {
-    this.snapshot = { ...this.snapshot, questions: this.snapshot.questions.map((item) => item.id === question.id ? { id: question.id, categoryId: question.categoryId, prompt: question.prompt, points: question.points, displayOrder: question.displayOrder } : item) };
+    const correct = question.choices.find((choice) => choice.isCorrect);
+    if (!correct) throw new Error("one_correct_choice_required");
+    this.correctChoiceIds[question.id] = correct.id;
+    this.snapshot = {
+      ...this.snapshot,
+      questions: this.snapshot.questions.map((item) => item.id === question.id
+        ? { id: question.id, categoryId: question.categoryId, prompt: question.prompt, points: question.points, displayOrder: question.displayOrder }
+        : item),
+      choices: [
+        ...this.snapshot.choices.filter((choice) => choice.questionId !== question.id),
+        ...question.choices.map((choice) => ({
+          id: choice.id, questionId: question.id, text: choice.text, displayOrder: choice.displayOrder,
+        })),
+      ],
+    };
     this.emit();
   }
 
   async deleteQuizQuestion(questionId: string): Promise<void> {
-    this.snapshot = { ...this.snapshot, questions: this.snapshot.questions.filter((item) => item.id !== questionId) };
+    delete this.correctChoiceIds[questionId];
+    this.snapshot = {
+      ...this.snapshot,
+      questions: this.snapshot.questions.filter((item) => item.id !== questionId),
+      choices: this.snapshot.choices.filter((choice) => choice.questionId !== questionId),
+    };
     this.emit();
   }
 
@@ -255,16 +293,98 @@ export class MemoryEventRepository implements EventRepository {
         ...session,
         activeCategoryId: category.id,
         activeQuestionIndex: 0,
+        selectedChoiceId: null,
+        choiceLocked: false,
         answerVisible: false,
-        revealedAnswer: null,
+        revealedChoiceId: null,
       },
     };
     this.emit();
   }
 
   async startQuiz(_eventId: string): Promise<void> { return undefined; }
-  async revealQuizAnswer(_sessionId: string, _questionId: string): Promise<void> { return undefined; }
-  async answerQuizQuestion(_sessionId: string, _questionId: string, _correct: boolean, _idempotencyKey: string): Promise<void> { return undefined; }
+
+  async selectQuizChoice(sessionId: string, questionId: string, choiceId: string): Promise<void> {
+    const session = this.requireActiveQuestion(sessionId, questionId);
+    if (!this.snapshot.event.quizEnabled) throw new Error("quiz_disabled");
+    if (session.choiceLocked || session.answerVisible) throw new Error("choice_locked");
+    if (!this.snapshot.choices.some((choice) => choice.id === choiceId && choice.questionId === questionId)) {
+      throw new Error("choice_not_found");
+    }
+    this.snapshot = { ...this.snapshot, quizSession: { ...session, selectedChoiceId: choiceId } };
+    this.emit();
+  }
+
+  async lockQuizChoice(sessionId: string, questionId: string): Promise<void> {
+    const session = this.requireActiveQuestion(sessionId, questionId);
+    if (!session.selectedChoiceId) throw new Error("choice_required");
+    this.snapshot = { ...this.snapshot, quizSession: { ...session, choiceLocked: true } };
+    this.emit();
+  }
+
+  async revealAndScoreQuizAnswer(sessionId: string, questionId: string): Promise<void> {
+    const session = this.requireActiveQuestion(sessionId, questionId);
+    if (session.answerVisible) return;
+    if (!session.choiceLocked || !session.selectedChoiceId) throw new Error("choice_not_locked");
+    const correctChoiceId = this.correctChoiceIds[questionId];
+    if (!correctChoiceId) throw new Error("correct_choice_missing");
+    const question = this.snapshot.questions.find((item) => item.id === questionId)!;
+    const teamId = session.teamOrder[session.currentTeamIndex];
+    if (!teamId) throw new Error("quiz_complete");
+    if (session.selectedChoiceId === correctChoiceId) {
+      await this.applyScore({
+        eventId: session.eventId,
+        teamId,
+        points: question.points,
+        keys: 0,
+        source: "quiz",
+        idempotencyKey: `quiz:${sessionId}:${questionId}`,
+      });
+    }
+    const current = this.snapshot.quizSession;
+    if (!current) throw new Error("quiz_not_started");
+    this.snapshot = {
+      ...this.snapshot,
+      quizSession: { ...current, answerVisible: true, revealedChoiceId: correctChoiceId },
+    };
+    this.emit();
+  }
+
+  async advanceQuizQuestion(sessionId: string, questionId: string): Promise<void> {
+    const session = this.requireActiveQuestion(sessionId, questionId);
+    if (!session.answerVisible) throw new Error("answer_not_revealed");
+    const categoryQuestions = this.snapshot.questions
+      .filter((question) => question.categoryId === session.activeCategoryId)
+      .sort((left, right) => left.displayOrder - right.displayOrder);
+    const hasNext = session.activeQuestionIndex + 1 < categoryQuestions.length;
+    this.snapshot = {
+      ...this.snapshot,
+      categories: hasNext ? this.snapshot.categories : this.snapshot.categories.map((category) => category.id === session.activeCategoryId
+        ? { ...category, status: "played" }
+        : category),
+      quizSession: {
+        ...session,
+        currentTeamIndex: hasNext ? session.currentTeamIndex : session.currentTeamIndex + 1,
+        activeCategoryId: hasNext ? session.activeCategoryId : null,
+        activeQuestionIndex: hasNext ? session.activeQuestionIndex + 1 : 0,
+        selectedChoiceId: null,
+        choiceLocked: false,
+        answerVisible: false,
+        revealedChoiceId: null,
+      },
+    };
+    this.emit();
+  }
+
+  private requireActiveQuestion(sessionId: string, questionId: string) {
+    const session = this.snapshot.quizSession;
+    if (!session || session.id !== sessionId || !session.activeCategoryId) throw new Error("no_active_question");
+    const question = this.snapshot.questions
+      .filter((item) => item.categoryId === session.activeCategoryId)
+      .sort((left, right) => left.displayOrder - right.displayOrder)[session.activeQuestionIndex];
+    if (!question || question.id !== questionId) throw new Error("not_active_question");
+    return session;
+  }
   async resetQuiz(eventId: string): Promise<void> {
     const quizPointsByTeam = new Map<string, number>();
     for (const [key, score] of this.appliedScores) {
