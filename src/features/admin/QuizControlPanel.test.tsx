@@ -1,8 +1,8 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEvent, makeTeam } from "../../test/fixtures";
-import type { QuizCategory, QuizQuestion, QuizSession } from "../../domain/types";
+import type { QuizCategory, QuizChoice, QuizQuestion, QuizSession } from "../../domain/types";
 import { QuizControlPanel } from "./QuizControlPanel";
 
 const teams = Array.from({ length: 5 }, (_, index) => makeTeam({
@@ -10,16 +10,25 @@ const teams = Array.from({ length: 5 }, (_, index) => makeTeam({
 }));
 const category: QuizCategory = { id: "category-1", eventId: "event-1", title: "Hiver", imageUrl: null, displayOrder: 0, status: "available", chosenByTeamId: null };
 const question: QuizQuestion = { id: "question-1", categoryId: "category-1", prompt: "Question ?", points: 10, displayOrder: 0 };
+const choices: QuizChoice[] = [
+  { id: "choice-a", questionId: "question-1", text: "Une baguette", displayOrder: 0 },
+  { id: "choice-b", questionId: "question-1", text: "Un médaillon", displayOrder: 1 },
+  { id: "choice-c", questionId: "question-1", text: "Une clé", displayOrder: 2 },
+  { id: "choice-d", questionId: "question-1", text: "Un grimoire", displayOrder: 3 },
+];
 const session: QuizSession = {
-   id: "session-1", eventId: "event-1", teamOrder: teams.map((team) => team.id), currentTeamIndex: 0,
-  activeCategoryId: "category-1", activeQuestionIndex: 0, answerVisible: false, revealedAnswer: null, startedAt: "2026-12-18T10:00:00Z",
+  id: "session-1", eventId: "event-1", teamOrder: teams.map((team) => team.id), currentTeamIndex: 0,
+  activeCategoryId: "category-1", activeQuestionIndex: 0, selectedChoiceId: null, choiceLocked: false,
+  answerVisible: false, revealedChoiceId: null, startedAt: "2026-12-18T10:00:00Z",
 };
 
 describe("QuizControlPanel", () => {
   const base = {
-    event: makeEvent(), teams, categories: [category], questions: [question], session,
-    onToggleAccess: vi.fn(), onStart: vi.fn(), onReveal: vi.fn(), onAnswer: vi.fn(), onReset: vi.fn(),
+    event: makeEvent(), teams, categories: [category], questions: [question], choices, session,
+    onToggleAccess: vi.fn(), onStart: vi.fn(), onLock: vi.fn(), onRevealAndScore: vi.fn(), onAdvance: vi.fn(), onReset: vi.fn(),
   };
+
+  beforeEach(() => vi.clearAllMocks());
 
   it("exige un départage complet avant le démarrage", () => {
     const tied = teams.map((team, index) => index < 2 ? { ...team, points: 50, keys: 2, tieBreakPriority: null } : team);
@@ -28,26 +37,45 @@ describe("QuizControlPanel", () => {
     expect(screen.getByRole("button", { name: /démarrer/i })).toBeDisabled();
   });
 
-  it("empêche une double validation pendant l'appel atomique", async () => {
-    const user = userEvent.setup();
-    let finish!: () => void;
-    const onAnswer = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
-    render(<QuizControlPanel {...base} session={{ ...session, answerVisible: true, revealedAnswer: "Réponse" }} onAnswer={onAnswer} />);
-    const correct = screen.getByRole("button", { name: /bonne réponse/i });
-    await user.click(correct);
-    expect(correct).toBeDisabled();
-    await user.click(correct);
-    expect(onAnswer).toHaveBeenCalledOnce();
-    finish();
+  it("désactive le verrouillage tant qu’aucune réponse n’est choisie", () => {
+    render(<QuizControlPanel {...base} />);
+
+    expect(screen.getByRole("button", { name: "Verrouiller le choix" })).toBeDisabled();
   });
 
-  it("révèle la réponse avant d'autoriser la notation", async () => {
+  it("affiche et verrouille le choix actuel", async () => {
     const user = userEvent.setup();
-    const onReveal = vi.fn().mockResolvedValue(undefined);
-    render(<QuizControlPanel {...base} onReveal={onReveal} />);
-    expect(screen.getByRole("button", { name: /bonne réponse/i })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: /révéler/i }));
-    expect(onReveal).toHaveBeenCalledWith("session-1", "question-1");
+    const onLock = vi.fn().mockResolvedValue(undefined);
+    render(<QuizControlPanel {...base} session={{ ...session, selectedChoiceId: "choice-b" }} onLock={onLock} />);
+
+    expect(screen.getByText("Choix actuel : B — Un médaillon")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Verrouiller le choix" }));
+    expect(onLock).toHaveBeenCalledWith("session-1", "question-1");
+  });
+
+  it("révèle et note automatiquement un choix verrouillé", async () => {
+    const user = userEvent.setup();
+    const onRevealAndScore = vi.fn().mockResolvedValue(undefined);
+    render(<QuizControlPanel {...base} session={{ ...session, selectedChoiceId: "choice-b", choiceLocked: true }} onRevealAndScore={onRevealAndScore} />);
+
+    await user.click(screen.getByRole("button", { name: "Révéler la réponse" }));
+    expect(onRevealAndScore).toHaveBeenCalledWith("session-1", "question-1");
+  });
+
+  it("passe à la question suivante seulement après la révélation", async () => {
+    const user = userEvent.setup();
+    const onAdvance = vi.fn().mockResolvedValue(undefined);
+    render(<QuizControlPanel {...base} session={{
+      ...session,
+      selectedChoiceId: "choice-b",
+      choiceLocked: true,
+      answerVisible: true,
+      revealedChoiceId: "choice-c",
+    }} onAdvance={onAdvance} />);
+
+    expect(screen.getByText(/mauvaise réponse/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Question suivante" }));
+    expect(onAdvance).toHaveBeenCalledWith("session-1", "question-1");
   });
 
   it("annule la réinitialisation avec Échap et restaure le focus", async () => {

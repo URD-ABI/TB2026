@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { EventConfig, QuizCategory, QuizQuestion, QuizSession, Team } from "../../domain/types";
+import type { EventConfig, QuizCategory, QuizChoice, QuizQuestion, QuizSession, Team } from "../../domain/types";
 import { freezeQuizOrder } from "../../domain/quiz";
 
 type Props = {
-  event: EventConfig; teams: Team[]; categories: QuizCategory[]; questions: QuizQuestion[]; session: QuizSession | null;
+  event: EventConfig; teams: Team[]; categories: QuizCategory[]; questions: QuizQuestion[]; choices: QuizChoice[]; session: QuizSession | null;
   onToggleAccess(enabled: boolean): Promise<void>;
   onStart(eventId: string): Promise<void>;
-  onReveal(sessionId: string, questionId: string): Promise<void>;
-  onAnswer(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void>;
+  onLock(sessionId: string, questionId: string): Promise<void>;
+  onRevealAndScore(sessionId: string, questionId: string): Promise<void>;
+  onAdvance(sessionId: string, questionId: string): Promise<void>;
   onReset(eventId: string): Promise<void>;
 };
 
@@ -23,6 +24,8 @@ export function QuizControlPanel(props: Props) {
   const category = props.categories.find((item) => item.id === session?.activeCategoryId);
   const categoryQuestions = props.questions.filter((item) => item.categoryId === category?.id).sort((a, b) => a.displayOrder - b.displayOrder);
   const question = categoryQuestions[session?.activeQuestionIndex ?? 0];
+  const selectedChoice = props.choices.find((choice) => choice.id === session?.selectedChoiceId);
+  const revealedChoice = props.choices.find((choice) => choice.id === session?.revealedChoiceId);
   const team = props.teams.find((item) => item.id === session?.teamOrder[session.currentTeamIndex]);
   const run = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -61,10 +64,19 @@ export function QuizControlPanel(props: Props) {
       <button type="button" disabled={busy || tieBreakRequired || !props.event.quizEnabled} onClick={() => void run(() => props.onStart(props.event.id))}>Démarrer le quiz</button>
     </> : <div className="admin-live-question">
       <p>Au tour de {team?.name ?? "l’équipe suivante"}</p>
-      {question ? <><h4>{question.prompt}</h4>{session.answerVisible ? <p>Réponse : {session.revealedAnswer}</p> : null}
-        <button type="button" disabled={busy || session.answerVisible} onClick={() => void run(() => props.onReveal(session.id, question.id))}>Révéler la réponse</button>
-        <button type="button" disabled={busy || !session.answerVisible} onClick={() => void run(() => props.onAnswer(session.id, question.id, true, crypto.randomUUID()))}>Bonne réponse</button>
-        <button type="button" disabled={busy || !session.answerVisible} onClick={() => void run(() => props.onAnswer(session.id, question.id, false, crypto.randomUUID()))}>Mauvaise réponse</button></> : <p>En attente du choix d’un thème par l’équipe.</p>}
+      {question ? <>
+        <h4>{question.prompt}</h4>
+        {selectedChoice ? <p className="admin-live-question__choice">Choix actuel : {choiceLabel(selectedChoice)}</p> : <p className="admin-live-question__waiting">En attente de la réponse de l’équipe.</p>}
+        {!session.choiceLocked && !session.answerVisible ? <button type="button" disabled={busy || !selectedChoice} onClick={() => void run(() => props.onLock(session.id, question.id))}>Verrouiller le choix</button> : null}
+        {session.choiceLocked && !session.answerVisible ? <button type="button" disabled={busy} onClick={() => void run(() => props.onRevealAndScore(session.id, question.id))}>Révéler la réponse</button> : null}
+        {session.answerVisible ? <>
+          <p className={session.selectedChoiceId === session.revealedChoiceId ? "admin-live-question__result admin-live-question__result--correct" : "admin-live-question__result admin-live-question__result--wrong"}>
+            {session.selectedChoiceId === session.revealedChoiceId ? "Bonne réponse" : "Mauvaise réponse"}
+            {revealedChoice ? ` — Solution : ${choiceLabel(revealedChoice)}` : ""}
+          </p>
+          <button type="button" disabled={busy} onClick={() => void run(() => props.onAdvance(session.id, question.id))}>Question suivante</button>
+        </> : null}
+      </> : <p>En attente du choix d’un thème par l’équipe.</p>}
     </div>}
     <button
       ref={resetReturnFocus}
@@ -93,6 +105,10 @@ export function QuizControlPanel(props: Props) {
     {resetState === "error" ? <p className="admin-alert" role="alert">Réinitialisation du quiz impossible. Réessayez.</p> : null}
     {error ? <p className="admin-alert" role="alert">{error}</p> : null}
   </section>;
+}
+
+function choiceLabel(choice: QuizChoice) {
+  return `${String.fromCharCode(65 + choice.displayOrder)} — ${choice.text}`;
 }
 
 function trapDialogFocus(event: KeyboardEvent<HTMLDivElement>) {
