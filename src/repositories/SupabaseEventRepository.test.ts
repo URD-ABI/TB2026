@@ -758,6 +758,7 @@ function makeExpectedSnapshot(teamName: string) {
     challenges: [mapChallengeRow(challengeRow)],
     categories: [mapCategoryRow(categoryRow)],
     questions: [mapQuestionRow(questionRow)],
+    choices: [mapQuizChoiceRow(choiceRow)],
     quizSession: mapQuizSessionRow(quizSessionRow),
   };
 }
