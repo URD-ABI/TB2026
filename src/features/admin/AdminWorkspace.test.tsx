@@ -30,6 +30,7 @@ function makeWorkspaceRepository(
     getAdminQuizQuestions: vi.fn().mockResolvedValue([]),
     getScoreHistory: vi.fn().mockResolvedValue([]),
     getAdminParticipants,
+    resetQuiz: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn((_slug: string, listener: (snapshot: EventSnapshot) => void) => {
       emitSnapshot = listener;
       listener(initial);
@@ -39,9 +40,9 @@ function makeWorkspaceRepository(
   return { repository, emit: (snapshot: EventSnapshot) => emitSnapshot(snapshot), initial };
 }
 
-function renderWorkspace(repository: EventRepository) {
+function renderWorkspace(repository: EventRepository, path = "/admin/participants") {
   return render(
-    <MemoryRouter initialEntries={["/admin/participants"]}>
+    <MemoryRouter initialEntries={[path]}>
       <AppProviders repository={repository} eventSlug="tournoi-des-arcanes">
         <Routes>
           <Route path="/admin/*" element={<AdminWorkspace />} />
@@ -52,6 +53,17 @@ function renderWorkspace(repository: EventRepository) {
 }
 
 describe("AdminWorkspace participant refresh", () => {
+  it("raccorde la réinitialisation du quiz au dépôt", async () => {
+    const user = userEvent.setup();
+    const fake = makeWorkspaceRepository(vi.fn().mockResolvedValue([]));
+    renderWorkspace(fake.repository, "/admin/quiz");
+
+    await user.click(await screen.findByRole("button", { name: /^réinitialiser le quiz$/i }));
+    await user.click(screen.getByRole("button", { name: /confirmer la réinitialisation/i }));
+
+    expect(fake.repository.resetQuiz).toHaveBeenCalledWith(fake.initial.event.id);
+  });
+
   it("ignore une réponse obsolète arrivée après le rafraîchissement le plus récent", async () => {
     const oldRequest = deferred<AdminParticipant[]>();
     const currentRequest = deferred<AdminParticipant[]>();

@@ -173,6 +173,7 @@ export function AdminWorkspace() {
       onStart={(eventId) => context.repository.startQuiz(eventId)}
       onReveal={(sessionId, questionId) => context.repository.revealQuizAnswer(sessionId, questionId)}
       onAnswer={(sessionId, questionId, correct, key) => context.repository.answerQuizQuestion(sessionId, questionId, correct, key)}
+      onReset={(eventId) => context.repository.resetQuiz(eventId)}
     />
     <QuizEditor
       categories={context.snapshot.categories} questions={adminQuestions}

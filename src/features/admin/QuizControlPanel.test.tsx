@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { makeEvent, makeTeam } from "../../test/fixtures";
@@ -18,7 +18,7 @@ const session: QuizSession = {
 describe("QuizControlPanel", () => {
   const base = {
     event: makeEvent(), teams, categories: [category], questions: [question], session,
-    onToggleAccess: vi.fn(), onStart: vi.fn(), onReveal: vi.fn(), onAnswer: vi.fn(),
+    onToggleAccess: vi.fn(), onStart: vi.fn(), onReveal: vi.fn(), onAnswer: vi.fn(), onReset: vi.fn(),
   };
 
   it("exige un départage complet avant le démarrage", () => {
@@ -48,5 +48,56 @@ describe("QuizControlPanel", () => {
     expect(screen.getByRole("button", { name: /bonne réponse/i })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: /révéler/i }));
     expect(onReveal).toHaveBeenCalledWith("session-1", "question-1");
+  });
+
+  it("annule la réinitialisation avec Échap et restaure le focus", async () => {
+    const user = userEvent.setup();
+    const onReset = vi.fn();
+    render(<QuizControlPanel {...base} onReset={onReset} />);
+
+    const trigger = screen.getByRole("button", { name: /^réinitialiser le quiz$/i });
+    await user.click(trigger);
+    expect(screen.getByRole("dialog", { name: /confirmer la réinitialisation du quiz/i })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: /confirmer la réinitialisation du quiz/i })).not.toBeInTheDocument();
+    expect(onReset).not.toHaveBeenCalled();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("confirme une seule réinitialisation et annonce sa réussite", async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    const onReset = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    render(<QuizControlPanel {...base} onReset={onReset} />);
+
+    const trigger = screen.getByRole("button", { name: /^réinitialiser le quiz$/i });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: /confirmer la réinitialisation du quiz/i });
+    expect(dialog).toHaveTextContent(/points attribués par le quiz/i);
+    const confirm = within(dialog).getByRole("button", { name: /confirmer la réinitialisation/i });
+    await user.click(confirm);
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(onReset).toHaveBeenCalledOnce();
+    expect(onReset).toHaveBeenCalledWith("event-1");
+
+    await act(async () => finish());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/quiz réinitialisé/i);
+    expect(trigger).toHaveFocus();
+  });
+
+  it("conserve la confirmation et affiche une erreur générique si le reset échoue", async () => {
+    const user = userEvent.setup();
+    const onReset = vi.fn().mockRejectedValue(new Error("JWT expired for admin@example.fr"));
+    render(<QuizControlPanel {...base} onReset={onReset} />);
+
+    await user.click(screen.getByRole("button", { name: /^réinitialiser le quiz$/i }));
+    await user.click(screen.getByRole("button", { name: /confirmer la réinitialisation/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/réinitialisation du quiz impossible/i);
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/jwt|admin@example\.fr/i);
+    expect(screen.getByRole("dialog", { name: /confirmer la réinitialisation du quiz/i })).toBeInTheDocument();
   });
 });
