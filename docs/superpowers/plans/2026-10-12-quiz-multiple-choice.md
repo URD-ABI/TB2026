@@ -15,7 +15,8 @@
 - `src/domain/types.ts`: public/admin choice types and expanded quiz session state.
 - `src/domain/quiz.ts`: pure validation for exactly four distinct choices and one correct answer.
 - `src/domain/quiz.test.ts`: validation tests.
-- `supabase/migrations/202610120002_quiz_multiple_choice.sql`: tables, migration, access rules and quiz state-machine RPCs.
+- `supabase/migrations/202610120002_quiz_multiple_choice.sql`: choice table, legacy-answer migration, session columns and safe public reading.
+- `supabase/migrations/202610120003_quiz_multiple_choice_flow.sql`: validated admin editing and atomic live quiz commands.
 - `supabase/tests/security.sql`: database permissions, state transitions, scoring and reset tests.
 - `supabase/seed.sql`: four complete example choices per seeded question.
 - `src/repositories/EventRepository.ts`: choice data and new command contracts.
@@ -211,7 +212,7 @@ Run:
 .\node_modules\.bin\supabase.cmd test db
 ```
 
-Expected: the new schema/privacy assertions pass; existing admin-question tests remain red until Task 3 functions are replaced.
+Expected: the new schema/privacy assertions pass and the legacy admin-question functions continue to work until Task 3 replaces them.
 
 - [ ] **Step 5: Commit**
 
@@ -223,7 +224,7 @@ git commit -m "feat: store protected quiz choices"
 ### Task 3: Database quiz state machine and automatic scoring
 
 **Files:**
-- Modify: `supabase/migrations/202610120002_quiz_multiple_choice.sql`
+- Create: `supabase/migrations/202610120003_quiz_multiple_choice_flow.sql`
 - Modify: `supabase/tests/security.sql`
 
 - [ ] **Step 1: Add failing state-machine tests**
@@ -256,7 +257,7 @@ Expected: FAIL because the four new commands do not exist.
 
 - [ ] **Step 3: Implement the four atomic commands**
 
-Implement these signatures in the migration:
+Implement these signatures in the new flow migration:
 
 ```sql
 public.select_quiz_choice(p_session_id uuid, p_question_id uuid, p_choice_id uuid) returns void
@@ -324,7 +325,7 @@ Expected: all database tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add supabase/migrations/202610120002_quiz_multiple_choice.sql supabase/tests/security.sql
+git add supabase/migrations/202610120003_quiz_multiple_choice_flow.sql supabase/tests/security.sql
 git commit -m "feat: add atomic multiple choice quiz flow"
 ```
 
