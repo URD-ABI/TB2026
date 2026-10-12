@@ -496,11 +496,13 @@ describe("SupabaseEventRepository", () => {
     await repository.startQuiz("event-1");
     await repository.revealQuizAnswer("session-1", "question-1");
     await repository.answerQuizQuestion("session-1", "question-1", true, "11111111-1111-4111-8111-111111111111");
+    await repository.resetQuiz("event-1");
 
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
       "update_challenge", "reorder_challenges", "get_admin_quiz_questions", "update_quiz_category", "reorder_quiz_categories",
-      "create_quiz_question", "update_quiz_question", "delete_quiz_question", "reorder_quiz_questions", "start_quiz", "reveal_quiz_answer", "answer_quiz_question",
+      "create_quiz_question", "update_quiz_question", "delete_quiz_question", "reorder_quiz_questions", "start_quiz", "reveal_quiz_answer", "answer_quiz_question", "reset_quiz",
     ]);
+    expect(rpc).toHaveBeenLastCalledWith("reset_quiz", { p_event_id: "event-1" });
   });
 
   it("charge, annule et réinitialise les données de répétition via les RPC protégées", async () => {

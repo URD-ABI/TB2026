@@ -7,7 +7,7 @@ export class MemoryEventRepository implements EventRepository {
   private snapshot: EventSnapshot;
   private readonly assignments: Record<string, string>;
   private readonly listeners = new Set<Listener>();
-  private readonly appliedScores = new Set<string>();
+  private readonly appliedScores = new Map<string, Parameters<EventRepository["applyScore"]>[0]>();
 
   constructor(snapshot: EventSnapshot, assignments: Record<string, string>) {
     this.snapshot = structuredClone(snapshot);
@@ -219,7 +219,7 @@ export class MemoryEventRepository implements EventRepository {
     const target = this.snapshot.teams.find((team) => team.id === input.teamId && team.eventId === input.eventId);
     if (!target) throw new Error("team_not_found");
     if (this.appliedScores.has(input.idempotencyKey)) return;
-    this.appliedScores.add(input.idempotencyKey);
+    this.appliedScores.set(input.idempotencyKey, structuredClone(input));
     this.snapshot = {
       ...this.snapshot,
       teams: this.snapshot.teams.map((team) => team.id === input.teamId && team.eventId === input.eventId
@@ -265,6 +265,26 @@ export class MemoryEventRepository implements EventRepository {
   async startQuiz(_eventId: string): Promise<void> { return undefined; }
   async revealQuizAnswer(_sessionId: string, _questionId: string): Promise<void> { return undefined; }
   async answerQuizQuestion(_sessionId: string, _questionId: string, _correct: boolean, _idempotencyKey: string): Promise<void> { return undefined; }
+  async resetQuiz(eventId: string): Promise<void> {
+    const quizPointsByTeam = new Map<string, number>();
+    for (const [key, score] of this.appliedScores) {
+      if (score.eventId !== eventId || score.source !== "quiz") continue;
+      quizPointsByTeam.set(score.teamId, (quizPointsByTeam.get(score.teamId) ?? 0) + score.points);
+      this.appliedScores.delete(key);
+    }
+    this.snapshot = {
+      ...this.snapshot,
+      event: this.snapshot.event.id === eventId ? { ...this.snapshot.event, quizEnabled: false } : this.snapshot.event,
+      teams: this.snapshot.teams.map((team) => team.eventId === eventId
+        ? { ...team, points: team.points - (quizPointsByTeam.get(team.id) ?? 0) }
+        : team),
+      categories: this.snapshot.categories.map((category) => category.eventId === eventId
+        ? { ...category, status: "available", chosenByTeamId: null }
+        : category),
+      quizSession: this.snapshot.quizSession?.eventId === eventId ? null : this.snapshot.quizSession,
+    };
+    this.emit();
+  }
   async getScoreHistory(_eventId: string) { return []; }
   async reverseScoreEvent(_scoreEventId: string): Promise<void> { return undefined; }
   async resetRehearsal(eventId: string): Promise<void> {

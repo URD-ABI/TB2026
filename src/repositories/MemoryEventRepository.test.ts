@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryEventRepository } from "./MemoryEventRepository";
-import { makeEventSnapshot, makeParticipant, makeTeam } from "../test/fixtures";
+import { makeEvent, makeEventSnapshot, makeParticipant, makeTeam } from "../test/fixtures";
 
 describe("MemoryEventRepository", () => {
   it("émet immédiatement une copie isolée à la souscription", async () => {
@@ -75,6 +75,26 @@ describe("MemoryEventRepository", () => {
     await repository.applyScore(input);
     expect((await repository.getSnapshot("tournoi-des-arcanes")).teams[0]).toMatchObject({ points: 5, keys: 1 });
     expect(received).toHaveLength(2);
+  });
+
+  it("réinitialise seulement le quiz et retire uniquement ses points", async () => {
+    const repository = new MemoryEventRepository(makeEventSnapshot({
+      event: makeEvent({ quizEnabled: true }),
+      teams: [makeTeam({ points: 40, keys: 3, tieBreakPriority: 2 })],
+      categories: [{ id: "category-1", eventId: "event-1", title: "Hiver", imageUrl: null, displayOrder: 0, status: "played", chosenByTeamId: "team-a" }],
+      quizSession: { id: "session-1", eventId: "event-1", teamOrder: ["team-a"], currentTeamIndex: 1, activeCategoryId: null, activeQuestionIndex: 0, answerVisible: false, revealedAnswer: null, startedAt: "2026-12-18T10:00:00Z" },
+    }), {});
+    await repository.applyScore({ eventId: "event-1", teamId: "team-a", points: 5, keys: 0, source: "challenge", idempotencyKey: "challenge-1" });
+    await repository.applyScore({ eventId: "event-1", teamId: "team-a", points: 10, keys: 0, source: "quiz", idempotencyKey: "quiz-1" });
+    await repository.setTeamTieBreakOrder("event-1", ["team-a"]);
+
+    await repository.resetQuiz("event-1");
+
+    const snapshot = await repository.getSnapshot("tournoi-des-arcanes");
+    expect(snapshot.event.quizEnabled).toBe(false);
+    expect(snapshot.teams[0]).toMatchObject({ points: 45, keys: 3, tieBreakPriority: 1 });
+    expect(snapshot.categories[0]).toMatchObject({ status: "available", chosenByTeamId: null });
+    expect(snapshot.quizSession).toBeNull();
   });
 
   it("cesse de notifier un abonné après désinscription", async () => {

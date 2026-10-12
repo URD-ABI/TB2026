@@ -573,6 +573,11 @@ export class SupabaseEventRepository implements EventRepository {
     if (result.error) throw new Error(result.error.message);
   }
 
+  async resetQuiz(eventId: string): Promise<void> {
+    const result = await this.client.rpc("reset_quiz", { p_event_id: eventId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
   async getScoreHistory(eventId: string): Promise<ScoreEvent[]> {
     const result = await this.client.rpc("get_score_history", { p_event_id: eventId }) as QueryResult<Row[]>;
     return unwrap(result).map(mapScoreEventRow);

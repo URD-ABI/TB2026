@@ -60,6 +60,7 @@ export interface EventRepository {
   startQuiz(eventId: string): Promise<void>;
   revealQuizAnswer(sessionId: string, questionId: string): Promise<void>;
   answerQuizQuestion(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void>;
+  resetQuiz(eventId: string): Promise<void>;
   getScoreHistory(eventId: string): Promise<ScoreEvent[]>;
   reverseScoreEvent(scoreEventId: string): Promise<void>;
   resetRehearsal(eventId: string): Promise<void>;
