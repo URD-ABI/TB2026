@@ -1,6 +1,6 @@
 begin;
 
-select plan(325);
+select plan(343);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -239,15 +239,19 @@ select has_function('public', 'start_quiz', array['uuid']::text[], 'start_quiz h
 select has_function('public', 'choose_quiz_category', array['uuid', 'uuid', 'uuid']::text[], 'choose_quiz_category has the required signature');
 select has_function('public', 'reveal_quiz_answer', array['uuid', 'uuid']::text[], 'reveal_quiz_answer has the required signature');
 select has_function('public', 'answer_quiz_question', array['uuid', 'uuid', 'boolean', 'uuid']::text[], 'answer_quiz_question has the required signature');
+select has_function('public', 'reset_quiz', array['uuid']::text[], 'reset_quiz has the required signature');
 select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), array['p_event_id']::text[], 'start_quiz exposes named identifiers');
 select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'choose_quiz_category' and oidvectortypes(p.proargtypes) = 'uuid, uuid, uuid'), array['p_session_id', 'p_team_id', 'p_category_id']::text[], 'choose_quiz_category exposes named identifiers');
 select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), array['p_session_id', 'p_question_id']::text[], 'reveal_quiz_answer exposes named identifiers');
 select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'answer_quiz_question' and oidvectortypes(p.proargtypes) = 'uuid, uuid, boolean, uuid'), array['p_session_id', 'p_question_id', 'p_correct', 'p_idempotency_key']::text[], 'answer_quiz_question exposes named identifiers');
+select is((select p.proargnames from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reset_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), array['p_event_id']::text[], 'reset_quiz exposes the expected parameter name');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), true, 'start_quiz is security definer');
 select ok((select pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(hashtextextended(''score:'' || p_event_id::text, 0))%' from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), 'start_quiz shares the event score advisory lock used by score mutations');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'choose_quiz_category' and oidvectortypes(p.proargtypes) = 'uuid, uuid, uuid'), true, 'choose_quiz_category is security definer');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), true, 'reveal_quiz_answer is security definer');
 select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'answer_quiz_question' and oidvectortypes(p.proargtypes) = 'uuid, uuid, boolean, uuid'), true, 'answer_quiz_question is security definer');
+select is((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reset_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), true, 'reset_quiz is security definer');
+select is(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reset_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), false), false, 'anon cannot execute reset_quiz');
 select ok(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'choose_quiz_category' and oidvectortypes(p.proargtypes) = 'uuid, uuid, uuid'), false), 'anon may execute only the public category choice mutation');
 select is(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'start_quiz' and oidvectortypes(p.proargtypes) = 'uuid'), false), false, 'anon cannot start the quiz');
 select is(coalesce((select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'reveal_quiz_answer' and oidvectortypes(p.proargtypes) = 'uuid, uuid'), false), false, 'anon cannot reveal quiz answers');
@@ -352,6 +356,51 @@ reset role;
 select is((select current_team_index from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), 1, 'last category question advances to the next frozen team');
 select is((select active_category_id is null from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), true, 'last category question returns the public screen to category choice');
 select is((select status from public.quiz_categories where id = '94000000-0000-0000-0000-000000000001'), 'played', 'completed category remains played');
+
+-- A dedicated quiz reset rolls back quiz-only state and scoring.
+insert into public.events (id, slug, title, quiz_enabled)
+values ('a8000000-0000-0000-0000-000000000001', 'quiz-reset-test', 'Quiz reset test', true);
+insert into public.teams (id, event_id, name, color, display_order, points, keys, tie_break_priority) values
+  ('a8100000-0000-0000-0000-000000000001', 'a8000000-0000-0000-0000-000000000001', 'Reset A', '#112233', 0, 92, 4, 2),
+  ('a8100000-0000-0000-0000-000000000002', 'a8000000-0000-0000-0000-000000000001', 'Reset B', '#445566', 1, 50, 7, 1);
+insert into public.quiz_categories (id, event_id, title, display_order, status, chosen_by_team_id)
+values ('a8200000-0000-0000-0000-000000000001', 'a8000000-0000-0000-0000-000000000001', 'Reset category', 0, 'played', 'a8100000-0000-0000-0000-000000000001');
+insert into public.quiz_questions (id, category_id, prompt, points, display_order) values
+  ('a8300000-0000-0000-0000-000000000001', 'a8200000-0000-0000-0000-000000000001', 'Reset question 1?', 17, 0),
+  ('a8300000-0000-0000-0000-000000000002', 'a8200000-0000-0000-0000-000000000001', 'Reset question 2?', 20, 1);
+insert into public.quiz_question_answers (question_id, answer) values
+  ('a8300000-0000-0000-0000-000000000001', 'Protected 1'),
+  ('a8300000-0000-0000-0000-000000000002', 'Protected 2');
+insert into public.quiz_sessions (id, event_id, team_order, current_team_index, started_at)
+values ('a8400000-0000-0000-0000-000000000001', 'a8000000-0000-0000-0000-000000000001', array['a8100000-0000-0000-0000-000000000001'::uuid, 'a8100000-0000-0000-0000-000000000002'::uuid], 1, now());
+insert into public.score_events (id, event_id, team_id, points_delta, keys_delta, source, idempotency_key, reversed_at) values
+  ('a8500000-0000-0000-0000-000000000001', 'a8000000-0000-0000-0000-000000000001', 'a8100000-0000-0000-0000-000000000001', 17, 0, 'quiz', 'a8600000-0000-0000-0000-000000000001', null),
+  ('a8500000-0000-0000-0000-000000000002', 'a8000000-0000-0000-0000-000000000001', 'a8100000-0000-0000-0000-000000000002', 20, 0, 'quiz', 'a8600000-0000-0000-0000-000000000002', null),
+  ('a8500000-0000-0000-0000-000000000003', 'a8000000-0000-0000-0000-000000000001', 'a8100000-0000-0000-0000-000000000001', 11, 0, 'quiz', 'a8600000-0000-0000-0000-000000000003', now()),
+  ('a8500000-0000-0000-0000-000000000004', 'a8000000-0000-0000-0000-000000000001', 'a8100000-0000-0000-0000-000000000001', 5, 0, 'challenge', 'a8600000-0000-0000-0000-000000000004', null);
+insert into public.quiz_answers (id, session_id, question_id, team_id, correct, score_event_id, idempotency_key) values
+  ('a8700000-0000-0000-0000-000000000001', 'a8400000-0000-0000-0000-000000000001', 'a8300000-0000-0000-0000-000000000001', 'a8100000-0000-0000-0000-000000000001', true, 'a8500000-0000-0000-0000-000000000001', 'a8800000-0000-0000-0000-000000000001'),
+  ('a8700000-0000-0000-0000-000000000002', 'a8400000-0000-0000-0000-000000000001', 'a8300000-0000-0000-0000-000000000002', 'a8100000-0000-0000-0000-000000000002', true, 'a8500000-0000-0000-0000-000000000002', 'a8800000-0000-0000-0000-000000000002');
+
+set local role anon;
+select throws_ok($$select public.reset_quiz('a8000000-0000-0000-0000-000000000001')$$, '42501', null, 'anon cannot reset the quiz');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reset_quiz('a8000000-0000-0000-0000-000000000001')$$, 'admin resets only quiz state');
+reset role;
+select is((select points from public.teams where id = 'a8100000-0000-0000-0000-000000000001'), 75, 'reset subtracts active quiz points from first team');
+select is((select points from public.teams where id = 'a8100000-0000-0000-0000-000000000002'), 30, 'reset subtracts active quiz points from second team');
+select ok((select keys = 4 and tie_break_priority = 2 from public.teams where id = 'a8100000-0000-0000-0000-000000000001'), 'reset preserves keys and tie-break priority');
+select is((select count(*) from public.score_events where event_id = 'a8000000-0000-0000-0000-000000000001' and source = 'quiz'), 0::bigint, 'reset deletes active and reversed quiz score history');
+select is((select count(*) from public.score_events where event_id = 'a8000000-0000-0000-0000-000000000001' and source = 'challenge'), 1::bigint, 'reset preserves non-quiz score history');
+select is((select count(*) from public.quiz_sessions where event_id = 'a8000000-0000-0000-0000-000000000001'), 0::bigint, 'reset removes the quiz session');
+select is((select count(*) from public.quiz_answers where session_id = 'a8400000-0000-0000-0000-000000000001'), 0::bigint, 'reset removes quiz answers');
+select ok((select status = 'available' and chosen_by_team_id is null from public.quiz_categories where id = 'a8200000-0000-0000-0000-000000000001'), 'reset makes categories available again');
+select is((select quiz_enabled from public.events where id = 'a8000000-0000-0000-0000-000000000001'), false, 'reset disables public quiz access');
+select is((select count(*) from public.quiz_categories where event_id = 'a8000000-0000-0000-0000-000000000001'), 1::bigint, 'reset preserves categories');
+select is((select count(*) from public.quiz_questions where category_id = 'a8200000-0000-0000-0000-000000000001'), 2::bigint, 'reset preserves questions');
+select is((select count(*) from public.quiz_question_answers where question_id in ('a8300000-0000-0000-0000-000000000001','a8300000-0000-0000-0000-000000000002')), 2::bigint, 'reset preserves protected answers');
 
 -- Organizer participant administration and event-scoped media.
 select has_function('public', 'reorder_participants', array['uuid', 'uuid[]']::text[], 'participant reorder has the required signature');
