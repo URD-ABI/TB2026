@@ -7,6 +7,7 @@ import {
   mapEventRow,
   mapParticipantRow,
   mapQuestionRow,
+  mapQuizChoiceRow,
   mapQuizSessionRow,
   mapTeamRow,
 } from "./SupabaseEventRepository";
@@ -43,10 +44,20 @@ const categoryRow = {
 const questionRow = {
   id: "question-1", category_id: "category-1", prompt: "Question ?", points: 20, display_order: 0,
 };
+const choiceRow = {
+  id: "choice-c", question_id: "question-1", choice_text: "Une clé", display_order: 2,
+};
+const adminChoices = [
+  { id: "choice-a", questionId: "question-1", text: "Une baguette", displayOrder: 0, isCorrect: false },
+  { id: "choice-b", questionId: "question-1", text: "Un médaillon", displayOrder: 1, isCorrect: false },
+  { id: "choice-c", questionId: "question-1", text: "Une clé", displayOrder: 2, isCorrect: true },
+  { id: "choice-d", questionId: "question-1", text: "Un grimoire", displayOrder: 3, isCorrect: false },
+];
 const quizSessionRow = {
   id: "session-1", event_id: "event-1", team_order: ["team-3", "team-1", "team-2"],
   current_team_index: 1, active_category_id: "category-1", active_question_index: 0,
-  answer_visible: true, revealed_answer: "Lumos", started_at: "2026-12-18T18:00:00Z",
+  selected_choice_id: "choice-b", choice_locked: true, answer_visible: true,
+  revealed_choice_id: "choice-c", started_at: "2026-12-18T18:00:00Z",
 };
 
 function makeQueryClient(results: Record<string, QueryResult>) {
@@ -68,8 +79,9 @@ function makeQueryClient(results: Record<string, QueryResult>) {
     };
     return builder;
   });
+  const rpc = vi.fn((name: string) => Promise.resolve(results[name] ?? { data: [], error: null }));
   const storage = { from: vi.fn(() => ({ getPublicUrl })) };
-  return { client: { from, storage }, calls, getPublicUrl };
+  return { client: { from, rpc, storage }, calls, getPublicUrl, rpc };
 }
 
 function makeSnapshotClient(overrides: Record<string, QueryResult> = {}) {
@@ -80,6 +92,7 @@ function makeSnapshotClient(overrides: Record<string, QueryResult> = {}) {
     challenges: { data: [challengeRow], error: null },
     quiz_categories: { data: [categoryRow], error: null },
     quiz_questions: { data: [questionRow], error: null },
+    get_public_quiz_choices: { data: [choiceRow], error: null },
     quiz_sessions: { data: quizSessionRow, error: null },
     ...overrides,
   });
@@ -128,11 +141,18 @@ describe("mappers Supabase", () => {
     });
   });
 
+  it("convertit un choix public sans exposer la bonne réponse", () => {
+    expect(mapQuizChoiceRow(choiceRow)).toEqual({
+      id: "choice-c", questionId: "question-1", text: "Une clé", displayOrder: 2,
+    });
+  });
+
   it("convertit la session publique avec son ordre figé et l’état de question", () => {
     expect(mapQuizSessionRow(quizSessionRow)).toEqual({
       id: "session-1", eventId: "event-1", teamOrder: ["team-3", "team-1", "team-2"],
       currentTeamIndex: 1, activeCategoryId: "category-1", activeQuestionIndex: 0,
-      answerVisible: true, revealedAnswer: "Lumos", startedAt: "2026-12-18T18:00:00Z",
+      selectedChoiceId: "choice-b", choiceLocked: true, answerVisible: true,
+      revealedChoiceId: "choice-c", startedAt: "2026-12-18T18:00:00Z",
     });
   });
 });
@@ -166,6 +186,7 @@ describe("SupabaseEventRepository", () => {
         imageUrl: "https://project-ref.supabase.co/storage/v1/object/public/event-media/event-1/category.webp",
       }],
       questions: [mapQuestionRow(questionRow)],
+      choices: [mapQuizChoiceRow(choiceRow)],
       quizSession: mapQuizSessionRow(quizSessionRow),
     });
     expect(calls[0]).toMatchObject({ table: "events", filters: [["eq", "slug", "tournoi-des-arcanes"]] });
@@ -244,6 +265,7 @@ describe("SupabaseEventRepository", () => {
       pending.set(table, { resolve, promise });
     }
     const client = {
+      rpc: () => Promise.resolve({ data: [choiceRow], error: null }),
       from: (table: string) => {
         const builder = {
           select: () => builder, eq: () => builder, in: () => builder, single: () => builder,
@@ -480,28 +502,33 @@ describe("SupabaseEventRepository", () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({ data: null, error: null })
       .mockResolvedValueOnce({ data: null, error: null })
-      .mockResolvedValueOnce({ data: [{ id: "question-1", category_id: "category-1", prompt: "Question ?", answer: "Réponse", points: 10, display_order: 0 }], error: null })
+      .mockResolvedValueOnce({ data: [{ id: "question-1", category_id: "category-1", prompt: "Question ?", choices: adminChoices, points: 10, display_order: 0 }], error: null })
       .mockResolvedValue({ data: null, error: null });
     const repository = new SupabaseEventRepository({ rpc } as never);
 
     await repository.updateChallenge({ id: "challenge-1", eventId: "event-1", title: "Titre", kind: "adresse", description: "Description", imageUrl: null, displayOrder: 0 });
     await repository.reorderChallenges("event-1", ["challenge-2", "challenge-1"]);
-    await expect(repository.getAdminQuizQuestions("event-1")).resolves.toEqual([expect.objectContaining({ id: "question-1", answer: "Réponse" })]);
+    await expect(repository.getAdminQuizQuestions("event-1")).resolves.toEqual([expect.objectContaining({ id: "question-1", choices: adminChoices })]);
     await repository.updateQuizCategory({ id: "category-1", eventId: "event-1", title: "Hiver", imageUrl: null, displayOrder: 0, status: "available", chosenByTeamId: null });
     await repository.reorderQuizCategories("event-1", ["category-2", "category-1"]);
-    await repository.createQuizQuestion({ categoryId: "category-1", prompt: "Nouvelle ?", answer: "Oui", points: 20, displayOrder: 1 });
-    await repository.updateQuizQuestion({ id: "question-1", categoryId: "category-1", prompt: "Modifiée ?", answer: "Oui", points: 30, displayOrder: 0 });
+    await repository.createQuizQuestion({ categoryId: "category-1", prompt: "Nouvelle ?", choices: adminChoices, points: 20, displayOrder: 1 });
+    await repository.updateQuizQuestion({ id: "question-1", categoryId: "category-1", prompt: "Modifiée ?", choices: adminChoices, points: 30, displayOrder: 0 });
     await repository.deleteQuizQuestion("question-1");
     await repository.reorderQuizQuestions("category-1", ["question-2", "question-1"]);
     await repository.startQuiz("event-1");
-    await repository.revealQuizAnswer("session-1", "question-1");
-    await repository.answerQuizQuestion("session-1", "question-1", true, "11111111-1111-4111-8111-111111111111");
+    await repository.selectQuizChoice("session-1", "question-1", "choice-c");
+    await repository.lockQuizChoice("session-1", "question-1");
+    await repository.revealAndScoreQuizAnswer("session-1", "question-1");
+    await repository.advanceQuizQuestion("session-1", "question-1");
     await repository.resetQuiz("event-1");
 
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
       "update_challenge", "reorder_challenges", "get_admin_quiz_questions", "update_quiz_category", "reorder_quiz_categories",
-      "create_quiz_question", "update_quiz_question", "delete_quiz_question", "reorder_quiz_questions", "start_quiz", "reveal_quiz_answer", "answer_quiz_question", "reset_quiz",
+      "create_quiz_question", "update_quiz_question", "delete_quiz_question", "reorder_quiz_questions", "start_quiz", "select_quiz_choice", "lock_quiz_choice", "reveal_and_score_quiz_answer", "advance_quiz_question", "reset_quiz",
     ]);
+    expect(rpc).toHaveBeenCalledWith("select_quiz_choice", {
+      p_session_id: "session-1", p_question_id: "question-1", p_choice_id: "choice-c",
+    });
     expect(rpc).toHaveBeenLastCalledWith("reset_quiz", { p_event_id: "event-1" });
   });
 

@@ -1,4 +1,4 @@
-import type { AdminParticipant, AdminQuizQuestion, Challenge, EventConfig, Participant, QuizCategory, QuizQuestion, QuizSession, ScoreEvent, Team } from "../domain/types";
+import type { AdminParticipant, AdminQuizQuestion, Challenge, EventConfig, Participant, QuizCategory, QuizChoice, QuizQuestion, QuizSession, ScoreEvent, Team } from "../domain/types";
 
 export type CreateParticipantInput = {
   eventId: string;
@@ -17,6 +17,7 @@ export type EventSnapshot = {
   challenges: Challenge[];
   categories: QuizCategory[];
   questions: QuizQuestion[];
+  choices: QuizChoice[];
   quizSession: QuizSession | null;
 };
 
@@ -58,8 +59,10 @@ export interface EventRepository {
   applyScore(input: { eventId: string; teamId: string; points: number; keys: number; source: string; idempotencyKey: string }): Promise<void>;
   chooseQuizCategory(input: { eventId: string; sessionId: string; teamId: string; categoryId: string }): Promise<void>;
   startQuiz(eventId: string): Promise<void>;
-  revealQuizAnswer(sessionId: string, questionId: string): Promise<void>;
-  answerQuizQuestion(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void>;
+  selectQuizChoice(sessionId: string, questionId: string, choiceId: string): Promise<void>;
+  lockQuizChoice(sessionId: string, questionId: string): Promise<void>;
+  revealAndScoreQuizAnswer(sessionId: string, questionId: string): Promise<void>;
+  advanceQuizQuestion(sessionId: string, questionId: string): Promise<void>;
   resetQuiz(eventId: string): Promise<void>;
   getScoreHistory(eventId: string): Promise<ScoreEvent[]>;
   reverseScoreEvent(scoreEventId: string): Promise<void>;

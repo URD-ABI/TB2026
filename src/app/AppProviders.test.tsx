@@ -38,7 +38,7 @@ function makeRepository(initial: Promise<EventSnapshot>) {
     createQuizQuestion: vi.fn(), updateQuizQuestion: vi.fn(), deleteQuizQuestion: vi.fn(), reorderQuizQuestions: vi.fn(),
     uploadEventBackground: vi.fn(), uploadParticipantPhoto: vi.fn(), uploadChallengeImage: vi.fn(), uploadQuizCategoryImage: vi.fn(),
     cleanupPendingMedia: vi.fn(), removeMedia: vi.fn(),
-    startQuiz: vi.fn(), revealQuizAnswer: vi.fn(), answerQuizQuestion: vi.fn(), resetQuiz: vi.fn(),
+    startQuiz: vi.fn(), selectQuizChoice: vi.fn(), lockQuizChoice: vi.fn(), revealAndScoreQuizAnswer: vi.fn(), advanceQuizQuestion: vi.fn(), resetQuiz: vi.fn(),
     getScoreHistory: vi.fn(), reverseScoreEvent: vi.fn(), resetRehearsal: vi.fn(),
   };
   return {

@@ -56,6 +56,7 @@ export function makeEventSnapshot(overrides: Partial<EventSnapshot> = {}): Event
   const challenges: Challenge[] = [];
   const categories: QuizCategory[] = [];
   const questions: QuizQuestion[] = [];
+  const choices = [];
   const quizSession = null;
-  return { event, teams, participants, challenges, categories, questions, quizSession, ...overrides };
+  return { event, teams, participants, challenges, categories, questions, choices, quizSession, ...overrides };
 }

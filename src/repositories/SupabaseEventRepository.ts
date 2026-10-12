@@ -6,6 +6,7 @@ import type {
   EventConfig,
   Participant,
   QuizCategory,
+  QuizChoice,
   QuizQuestion,
   QuizSession,
   ScoreEvent,
@@ -105,9 +106,20 @@ export function mapQuizSessionRow(row: Row): QuizSession {
     currentTeamIndex: row.current_team_index as number,
     activeCategoryId: nullableString(row, "active_category_id"),
     activeQuestionIndex: row.active_question_index as number,
+    selectedChoiceId: nullableString(row, "selected_choice_id"),
+    choiceLocked: row.choice_locked as boolean,
     answerVisible: row.answer_visible as boolean,
-    revealedAnswer: nullableString(row, "revealed_answer"),
+    revealedChoiceId: nullableString(row, "revealed_choice_id"),
     startedAt: nullableString(row, "started_at"),
+  };
+}
+
+export function mapQuizChoiceRow(row: Row): QuizChoice {
+  return {
+    id: stringValue(row, "id"),
+    questionId: stringValue(row, "question_id"),
+    text: stringValue(row, "choice_text"),
+    displayOrder: row.display_order as number,
   };
 }
 
@@ -122,7 +134,17 @@ export function mapQuestionRow(row: Row): QuizQuestion {
 }
 
 function mapAdminQuestionRow(row: Row): AdminQuizQuestion {
-  return { ...mapQuestionRow(row), answer: stringValue(row, "answer") };
+  const choices = (row.choices as Row[] | undefined) ?? [];
+  return {
+    ...mapQuestionRow(row),
+    choices: choices.map((choice) => ({
+      id: stringValue(choice, "id"),
+      questionId: (choice.questionId ?? choice.question_id) as string,
+      text: stringValue(choice, "text"),
+      displayOrder: (choice.displayOrder ?? choice.display_order) as number,
+      isCorrect: (choice.isCorrect ?? choice.is_correct) as boolean,
+    })).sort((left, right) => left.displayOrder - right.displayOrder),
+  };
 }
 
 function mapScoreEventRow(row: Row): ScoreEvent {
@@ -141,6 +163,15 @@ function unwrap<T>(result: QueryResult<T>): T {
 
 function ordered<T extends { displayOrder: number }>(items: T[]): T[] {
   return [...items].sort((left, right) => left.displayOrder - right.displayOrder);
+}
+
+function serializeChoices(choices: AdminQuizQuestion["choices"]) {
+  return choices.map((choice) => ({
+    id: choice.id,
+    text: choice.text.trim(),
+    displayOrder: choice.displayOrder,
+    isCorrect: choice.isCorrect,
+  }));
 }
 
 function storagePath(value: string | null): string | null {
@@ -177,13 +208,14 @@ export class SupabaseEventRepository implements EventRepository {
       .single() as QueryResult<Row>;
     const event = mapEventRow(unwrap(eventResult));
 
-    const [teamsResult, participantsResult, challengesResult, categoriesResult, sessionsResult] = await Promise.all([
+    const [teamsResult, participantsResult, challengesResult, categoriesResult, sessionsResult, choicesResult] = await Promise.all([
       this.client.from("teams").select("*").eq("event_id", event.id),
       this.client.from("participants").select("*").eq("event_id", event.id),
       this.client.from("challenges").select("*").eq("event_id", event.id),
       this.client.from("quiz_categories").select("*").eq("event_id", event.id),
       this.client.from("quiz_sessions").select("*").eq("event_id", event.id),
-    ]) as [QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[] | Row>];
+      this.client.rpc("get_public_quiz_choices", { p_event_id: event.id }),
+    ]) as [QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[]>, QueryResult<Row[] | Row>, QueryResult<Row[]>];
 
     const teams = ordered(unwrap(teamsResult).map(mapTeamRow));
     const participants = [...unwrap(participantsResult).map(mapParticipantRow)]
@@ -194,6 +226,7 @@ export class SupabaseEventRepository implements EventRepository {
     const sessionRows = unwrap(sessionsResult);
     const sessionRow = Array.isArray(sessionRows) ? sessionRows[0] : sessionRows;
     const quizSession = sessionRow ? mapQuizSessionRow(sessionRow) : null;
+    const choices = ordered(unwrap(choicesResult).map(mapQuizChoiceRow));
     let questions: QuizQuestion[] = [];
     if (categoryIds.length > 0) {
       const questionsResult = await this.client
@@ -219,6 +252,7 @@ export class SupabaseEventRepository implements EventRepository {
         imageUrl: this.publicMediaUrl(category.imageUrl),
       })),
       questions,
+      choices,
       quizSession,
     };
   }
@@ -449,12 +483,18 @@ export class SupabaseEventRepository implements EventRepository {
   }
 
   async createQuizQuestion(input: CreateQuizQuestionInput): Promise<void> {
-    const result = await this.client.rpc("create_quiz_question", { p_question_id: crypto.randomUUID(), p_category_id: input.categoryId, p_prompt: input.prompt, p_answer: input.answer, p_points: input.points, p_display_order: input.displayOrder }) as QueryResult<unknown>;
+    const result = await this.client.rpc("create_quiz_question", {
+      p_question_id: crypto.randomUUID(), p_category_id: input.categoryId, p_prompt: input.prompt,
+      p_points: input.points, p_display_order: input.displayOrder, p_choices: serializeChoices(input.choices),
+    }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }
 
   async updateQuizQuestion(question: AdminQuizQuestion): Promise<void> {
-    const result = await this.client.rpc("update_quiz_question", { p_question_id: question.id, p_category_id: question.categoryId, p_prompt: question.prompt, p_answer: question.answer, p_points: question.points }) as QueryResult<unknown>;
+    const result = await this.client.rpc("update_quiz_question", {
+      p_question_id: question.id, p_category_id: question.categoryId, p_prompt: question.prompt,
+      p_points: question.points, p_choices: serializeChoices(question.choices),
+    }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }
 
@@ -563,13 +603,23 @@ export class SupabaseEventRepository implements EventRepository {
     if (result.error) throw new Error(result.error.message);
   }
 
-  async revealQuizAnswer(sessionId: string, questionId: string): Promise<void> {
-    const result = await this.client.rpc("reveal_quiz_answer", { p_session_id: sessionId, p_question_id: questionId }) as QueryResult<unknown>;
+  async selectQuizChoice(sessionId: string, questionId: string, choiceId: string): Promise<void> {
+    const result = await this.client.rpc("select_quiz_choice", { p_session_id: sessionId, p_question_id: questionId, p_choice_id: choiceId }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }
 
-  async answerQuizQuestion(sessionId: string, questionId: string, correct: boolean, idempotencyKey: string): Promise<void> {
-    const result = await this.client.rpc("answer_quiz_question", { p_session_id: sessionId, p_question_id: questionId, p_correct: correct, p_idempotency_key: idempotencyKey }) as QueryResult<unknown>;
+  async lockQuizChoice(sessionId: string, questionId: string): Promise<void> {
+    const result = await this.client.rpc("lock_quiz_choice", { p_session_id: sessionId, p_question_id: questionId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async revealAndScoreQuizAnswer(sessionId: string, questionId: string): Promise<void> {
+    const result = await this.client.rpc("reveal_and_score_quiz_answer", { p_session_id: sessionId, p_question_id: questionId }) as QueryResult<unknown>;
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  async advanceQuizQuestion(sessionId: string, questionId: string): Promise<void> {
+    const result = await this.client.rpc("advance_quiz_question", { p_session_id: sessionId, p_question_id: questionId }) as QueryResult<unknown>;
     if (result.error) throw new Error(result.error.message);
   }
 
