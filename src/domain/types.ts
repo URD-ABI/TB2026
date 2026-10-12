@@ -52,7 +52,16 @@ export type QuizQuestion = {
   displayOrder: number;
 };
 
-export type AdminQuizQuestion = QuizQuestion & { answer: string };
+export type QuizChoice = {
+  id: Id;
+  questionId: Id;
+  text: string;
+  displayOrder: number;
+};
+
+export type AdminQuizChoice = QuizChoice & { isCorrect: boolean };
+
+export type AdminQuizQuestion = QuizQuestion & { choices: AdminQuizChoice[] };
 
 export type QuizSession = {
   id: Id;
@@ -61,8 +70,10 @@ export type QuizSession = {
   currentTeamIndex: number;
   activeCategoryId: Id | null;
   activeQuestionIndex: number;
+  selectedChoiceId: Id | null;
+  choiceLocked: boolean;
   answerVisible: boolean;
-  revealedAnswer: string | null;
+  revealedChoiceId: Id | null;
   startedAt: string | null;
 };
 

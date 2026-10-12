@@ -1,4 +1,4 @@
-import type { QuizCategory, Team } from "./types";
+import type { AdminQuizChoice, QuizCategory, Team } from "./types";
 import { rankTeams } from "./ranking";
 
 export function freezeQuizOrder(teams: Team[]): string[] {
@@ -19,4 +19,18 @@ export function canChooseCategory(
   return category.status === "available"
     && category.chosenByTeamId === null
     && !chosenTeamIds.includes(teamId);
+}
+
+export function validateAdminQuizChoices(choices: AdminQuizChoice[]) {
+  if (choices.length !== 4 || choices.some((choice) => !choice.text.trim())) {
+    return { valid: false as const, reason: "choice_count" as const };
+  }
+  const normalized = choices.map((choice) => choice.text.trim().toLocaleLowerCase("fr"));
+  if (new Set(normalized).size !== 4) {
+    return { valid: false as const, reason: "duplicate_choice" as const };
+  }
+  if (choices.filter((choice) => choice.isCorrect).length !== 1) {
+    return { valid: false as const, reason: "correct_choice_count" as const };
+  }
+  return { valid: true as const, reason: null };
 }

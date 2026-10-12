@@ -1,6 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { makeTeam } from "../test/fixtures";
-import { canChooseCategory, freezeQuizOrder } from "./quiz";
+import { canChooseCategory, freezeQuizOrder, validateAdminQuizChoices } from "./quiz";
+
+const validChoices = [
+  { id: "a", questionId: "q", text: "Une baguette", displayOrder: 0, isCorrect: false },
+  { id: "b", questionId: "q", text: "Un médaillon", displayOrder: 1, isCorrect: false },
+  { id: "c", questionId: "q", text: "Une clé", displayOrder: 2, isCorrect: true },
+  { id: "d", questionId: "q", text: "Un grimoire", displayOrder: 3, isCorrect: false },
+];
+
+describe("validateAdminQuizChoices", () => {
+  it("accepte quatre réponses distinctes avec une seule bonne réponse", () => {
+    expect(validateAdminQuizChoices(validChoices)).toEqual({ valid: true, reason: null });
+  });
+
+  it("refuse une liste incomplète ou vide", () => {
+    expect(validateAdminQuizChoices(validChoices.slice(0, 3))).toEqual({ valid: false, reason: "choice_count" });
+    expect(validateAdminQuizChoices(validChoices.map((choice, index) => index === 3 ? { ...choice, text: " " } : choice))).toEqual({ valid: false, reason: "choice_count" });
+  });
+
+  it("refuse les doublons sans tenir compte de la casse et des espaces", () => {
+    expect(validateAdminQuizChoices(validChoices.map((choice, index) => index === 3 ? { ...choice, text: " une CLÉ " } : choice))).toEqual({ valid: false, reason: "duplicate_choice" });
+  });
+
+  it("exige exactement une bonne réponse", () => {
+    expect(validateAdminQuizChoices(validChoices.map((choice) => ({ ...choice, isCorrect: false })))).toEqual({ valid: false, reason: "correct_choice_count" });
+    expect(validateAdminQuizChoices(validChoices.map((choice, index) => ({ ...choice, isCorrect: index < 2 })))).toEqual({ valid: false, reason: "correct_choice_count" });
+  });
+});
 
 describe("freezeQuizOrder", () => {
   it("fige l’ordre par points, puis clés, puis départage manuel", () => {
