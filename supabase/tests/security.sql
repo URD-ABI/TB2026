@@ -1,6 +1,6 @@
 begin;
 
-select plan(349);
+select plan(371);
 
 -- Required relations.
 select has_table('public', 'events', 'events table exists');
@@ -291,6 +291,15 @@ insert into public.quiz_questions (id, category_id, prompt, points, display_orde
 insert into public.quiz_question_answers (question_id, answer) values
   ('95000000-0000-0000-0000-000000000001', 'First protected answer'),
   ('95000000-0000-0000-0000-000000000002', 'Second protected answer');
+insert into public.quiz_question_choices (id, question_id, choice_text, display_order, is_correct) values
+  ('95100000-0000-0000-0000-000000000001', '95000000-0000-0000-0000-000000000001', 'First protected answer', 0, true),
+  ('95100000-0000-0000-0000-000000000002', '95000000-0000-0000-0000-000000000001', 'First distractor B', 1, false),
+  ('95100000-0000-0000-0000-000000000003', '95000000-0000-0000-0000-000000000001', 'First distractor C', 2, false),
+  ('95100000-0000-0000-0000-000000000004', '95000000-0000-0000-0000-000000000001', 'First distractor D', 3, false),
+  ('95200000-0000-0000-0000-000000000001', '95000000-0000-0000-0000-000000000002', 'Second protected answer', 0, true),
+  ('95200000-0000-0000-0000-000000000002', '95000000-0000-0000-0000-000000000002', 'Second distractor B', 1, false),
+  ('95200000-0000-0000-0000-000000000003', '95000000-0000-0000-0000-000000000002', 'Second distractor C', 2, false),
+  ('95200000-0000-0000-0000-000000000004', '95000000-0000-0000-0000-000000000002', 'Second distractor D', 3, false);
 insert into public.quiz_sessions (id, event_id)
 values ('97000000-0000-0000-0000-000000000001', '91111111-1111-1111-1111-111111111111');
 
@@ -363,6 +372,81 @@ select is((select current_team_index from public.quiz_sessions where event_id = 
 select is((select active_category_id is null from public.quiz_sessions where event_id = '91111111-1111-1111-1111-111111111111'), true, 'last category question returns the public screen to category choice');
 select is((select status from public.quiz_categories where id = '94000000-0000-0000-0000-000000000001'), 'played', 'completed category remains played');
 
+-- Multiple-choice quiz flow keeps selection, locking, reveal/scoring, and advance separate.
+select has_function('public', 'select_quiz_choice', array['uuid', 'uuid', 'uuid']::text[], 'public choice selection has the required signature');
+select has_function('public', 'lock_quiz_choice', array['uuid', 'uuid']::text[], 'choice locking has the required signature');
+select has_function('public', 'reveal_and_score_quiz_answer', array['uuid', 'uuid']::text[], 'automatic reveal and scoring has the required signature');
+select has_function('public', 'advance_quiz_question', array['uuid', 'uuid']::text[], 'explicit quiz advance has the required signature');
+
+insert into public.events (id, slug, title, quiz_enabled)
+values ('b1000000-0000-0000-0000-000000000001', 'multiple-choice-flow', 'Multiple choice flow', true);
+insert into public.teams (id, event_id, name, color, display_order, points, keys)
+values ('b1100000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', 'Choice team', '#123456', 0, 0, 0);
+insert into public.quiz_categories (id, event_id, title, display_order, chosen_by_team_id)
+values ('b1200000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', 'Choice category', 0, 'b1100000-0000-0000-0000-000000000001');
+insert into public.quiz_questions (id, category_id, prompt, points, display_order)
+values ('b1300000-0000-0000-0000-000000000001', 'b1200000-0000-0000-0000-000000000001', 'Which choice?', 10, 0);
+insert into public.quiz_question_choices (id, question_id, choice_text, display_order, is_correct) values
+  ('b1400000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001', 'Choice A', 0, false),
+  ('b1400000-0000-0000-0000-000000000002', 'b1300000-0000-0000-0000-000000000001', 'Choice B', 1, false),
+  ('b1400000-0000-0000-0000-000000000003', 'b1300000-0000-0000-0000-000000000001', 'Choice C', 2, true),
+  ('b1400000-0000-0000-0000-000000000004', 'b1300000-0000-0000-0000-000000000001', 'Choice D', 3, false);
+insert into public.quiz_sessions (id, event_id, team_order, active_category_id, started_at)
+values ('b1500000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', array['b1100000-0000-0000-0000-000000000001'::uuid], 'b1200000-0000-0000-0000-000000000001', now());
+
+set local role anon;
+select lives_ok($$select public.select_quiz_choice('b1500000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001', 'b1400000-0000-0000-0000-000000000002')$$, 'the team can select a public choice');
+reset role;
+select is((select selected_choice_id from public.quiz_sessions where id = 'b1500000-0000-0000-0000-000000000001'), 'b1400000-0000-0000-0000-000000000002'::uuid, 'selection is stored');
+set local role anon;
+select lives_ok($$select public.select_quiz_choice('b1500000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001', 'b1400000-0000-0000-0000-000000000003')$$, 'the team may replace a choice before lock');
+reset role;
+select is((select selected_choice_id from public.quiz_sessions where id = 'b1500000-0000-0000-0000-000000000001'), 'b1400000-0000-0000-0000-000000000003'::uuid, 'replacement selection is stored');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.lock_quiz_choice('b1500000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001')$$, 'admin locks a selected choice');
+reset role;
+select is((select choice_locked from public.quiz_sessions where id = 'b1500000-0000-0000-0000-000000000001'), true, 'session exposes the locked state');
+set local role anon;
+select throws_ok($$select public.select_quiz_choice('b1500000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001', 'b1400000-0000-0000-0000-000000000002')$$, 'P0001', 'choice_locked', 'selection cannot change after lock');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reveal_and_score_quiz_answer('b1500000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001')$$, 'admin reveals and scores the locked choice');
+reset role;
+select is((select revealed_choice_id from public.quiz_sessions where id = 'b1500000-0000-0000-0000-000000000001'), 'b1400000-0000-0000-0000-000000000003'::uuid, 'session reveals the correct choice id');
+select is((select points from public.teams where id = 'b1100000-0000-0000-0000-000000000001'), 10, 'correct locked choice awards fixed points');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.reveal_and_score_quiz_answer('b1500000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001')$$, 'repeating reveal is idempotent');
+reset role;
+select is((select points from public.teams where id = 'b1100000-0000-0000-0000-000000000001'), 10, 'repeating reveal never scores twice');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select lives_ok($$select public.advance_quiz_question('b1500000-0000-0000-0000-000000000001', 'b1300000-0000-0000-0000-000000000001')$$, 'admin advances explicitly after reveal');
+reset role;
+select is((select status from public.quiz_categories where id = 'b1200000-0000-0000-0000-000000000001'), 'played', 'last question marks its category played');
+select is((select selected_choice_id is null from public.quiz_sessions where id = 'b1500000-0000-0000-0000-000000000001'), true, 'advance clears the old selection');
+select is((select choice_locked from public.quiz_sessions where id = 'b1500000-0000-0000-0000-000000000001'), false, 'advance clears the old lock');
+
+insert into public.events (id, slug, title, quiz_enabled)
+values ('b2000000-0000-0000-0000-000000000001', 'incomplete-choices', 'Incomplete choices', true);
+insert into public.teams (id, event_id, name, color, display_order, points, keys)
+select ('b2100000-0000-0000-0000-00000000000' || position)::uuid,
+       'b2000000-0000-0000-0000-000000000001',
+       'Incomplete ' || position, '#123456', position - 1, 60 - position * 10, 0
+from generate_series(1, 5) position;
+insert into public.quiz_categories (id, event_id, title, display_order)
+values ('b2200000-0000-0000-0000-000000000001', 'b2000000-0000-0000-0000-000000000001', 'Incomplete category', 0);
+insert into public.quiz_questions (id, category_id, prompt, points, display_order)
+values ('b2300000-0000-0000-0000-000000000001', 'b2200000-0000-0000-0000-000000000001', 'Incomplete question?', 10, 0);
+insert into public.quiz_question_choices (id, question_id, choice_text, display_order, is_correct)
+values ('b2400000-0000-0000-0000-000000000001', 'b2300000-0000-0000-0000-000000000001', 'Only choice', 0, true);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}', true);
+select throws_ok($$select public.start_quiz('b2000000-0000-0000-0000-000000000001')$$, 'P0001', 'quiz_choices_incomplete', 'quiz cannot start while a question has incomplete choices');
+reset role;
+
 -- A dedicated quiz reset rolls back quiz-only state and scoring.
 insert into public.events (id, slug, title, quiz_enabled)
 values ('a8000000-0000-0000-0000-000000000001', 'quiz-reset-test', 'Quiz reset test', true);
@@ -377,6 +461,8 @@ insert into public.quiz_questions (id, category_id, prompt, points, display_orde
 insert into public.quiz_question_answers (question_id, answer) values
   ('a8300000-0000-0000-0000-000000000001', 'Protected 1'),
   ('a8300000-0000-0000-0000-000000000002', 'Protected 2');
+insert into public.quiz_question_choices (id, question_id, choice_text, display_order, is_correct)
+values ('a8310000-0000-0000-0000-000000000001', 'a8300000-0000-0000-0000-000000000001', 'Preserved choice', 0, true);
 insert into public.quiz_sessions (id, event_id, team_order, current_team_index, started_at)
 values ('a8400000-0000-0000-0000-000000000001', 'a8000000-0000-0000-0000-000000000001', array['a8100000-0000-0000-0000-000000000001'::uuid, 'a8100000-0000-0000-0000-000000000002'::uuid], 1, now());
 insert into public.score_events (id, event_id, team_id, points_delta, keys_delta, source, idempotency_key, reversed_at) values
@@ -407,6 +493,7 @@ select is((select quiz_enabled from public.events where id = 'a8000000-0000-0000
 select is((select count(*) from public.quiz_categories where event_id = 'a8000000-0000-0000-0000-000000000001'), 1::bigint, 'reset preserves categories');
 select is((select count(*) from public.quiz_questions where category_id = 'a8200000-0000-0000-0000-000000000001'), 2::bigint, 'reset preserves questions');
 select is((select count(*) from public.quiz_question_answers where question_id in ('a8300000-0000-0000-0000-000000000001','a8300000-0000-0000-0000-000000000002')), 2::bigint, 'reset preserves protected answers');
+select is((select count(*) from public.quiz_question_choices where question_id = 'a8300000-0000-0000-0000-000000000001'), 1::bigint, 'reset preserves editorial choices');
 
 -- Organizer participant administration and event-scoped media.
 select has_function('public', 'reorder_participants', array['uuid', 'uuid[]']::text[], 'participant reorder has the required signature');
@@ -619,15 +706,15 @@ select has_function('public', 'reorder_challenges', array['uuid', 'uuid[]']::tex
 select has_function('public', 'get_admin_quiz_questions', array['uuid']::text[], 'protected quiz question listing has the required signature');
 select has_function('public', 'update_quiz_category', array['uuid', 'uuid', 'text', 'text']::text[], 'quiz category update has the required signature');
 select has_function('public', 'reorder_quiz_categories', array['uuid', 'uuid[]']::text[], 'quiz category reorder has the required signature');
-select has_function('public', 'create_quiz_question', array['uuid', 'uuid', 'text', 'text', 'integer', 'integer']::text[], 'quiz question creation has the required signature');
-select has_function('public', 'update_quiz_question', array['uuid', 'uuid', 'text', 'text', 'integer']::text[], 'quiz question update has the required signature');
+select has_function('public', 'create_quiz_question', array['uuid', 'uuid', 'text', 'integer', 'integer', 'jsonb']::text[], 'quiz question creation has the required signature');
+select has_function('public', 'update_quiz_question', array['uuid', 'uuid', 'text', 'integer', 'jsonb']::text[], 'quiz question update has the required signature');
 select has_function('public', 'delete_quiz_question', array['uuid']::text[], 'quiz question deletion has the required signature');
 select has_function('public', 'reorder_quiz_questions', array['uuid', 'uuid[]']::text[], 'quiz question reorder has the required signature');
 
 set local role anon;
 select throws_ok($$select public.update_challenge('11111111-1111-1111-1111-111111111111', '40000000-0000-0000-0000-000000000001', 'Blocked', 'kind', 'description', null)$$, '42501', null, 'anon cannot update a challenge');
 select throws_ok($$select * from public.get_admin_quiz_questions('11111111-1111-1111-1111-111111111111')$$, '42501', null, 'anon cannot read protected quiz answers');
-select throws_ok($$select public.create_quiz_question('a6000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'Blocked?', 'Secret', 10, 1)$$, '42501', null, 'anon cannot create a quiz question');
+select throws_ok($call$select public.create_quiz_question('a6000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'Blocked?', 10, 1, '[]'::jsonb)$call$, '42501', null, 'anon cannot create a quiz question');
 reset role;
 
 insert into public.events (id, slug, title) values ('a1111111-1111-1111-1111-111111111111', 'admin-content', 'Admin content');
@@ -642,9 +729,19 @@ select lives_ok($$select public.update_challenge('a1111111-1111-1111-1111-111111
 select lives_ok($$select public.reorder_challenges('a1111111-1111-1111-1111-111111111111', array['a4000000-0000-0000-0000-000000000002','a4000000-0000-0000-0000-000000000001','a4000000-0000-0000-0000-000000000003','a4000000-0000-0000-0000-000000000004','a4000000-0000-0000-0000-000000000005']::uuid[])$$, 'admin reorders exactly five challenges');
 select lives_ok($$select public.update_quiz_category('a1111111-1111-1111-1111-111111111111', 'a5000000-0000-0000-0000-000000000001', 'Updated category', null)$$, 'admin updates a quiz category atomically');
 select lives_ok($$select public.reorder_quiz_categories('a1111111-1111-1111-1111-111111111111', array['a5000000-0000-0000-0000-000000000002','a5000000-0000-0000-0000-000000000001','a5000000-0000-0000-0000-000000000003','a5000000-0000-0000-0000-000000000004','a5000000-0000-0000-0000-000000000005','a5000000-0000-0000-0000-000000000006']::uuid[])$$, 'admin reorders exactly six categories');
-select lives_ok($$select public.create_quiz_question('a6000000-0000-0000-0000-000000000001', 'a5000000-0000-0000-0000-000000000001', 'Created question?', 'Created answer', 10, 0)$$, 'admin creates question and protected answer atomically');
-select results_eq($$select answer from public.get_admin_quiz_questions('a1111111-1111-1111-1111-111111111111') where id = 'a6000000-0000-0000-0000-000000000001'$$, $$values ('Created answer'::text)$$, 'admin listing includes the protected answer');
-select lives_ok($$select public.update_quiz_question('a6000000-0000-0000-0000-000000000001', 'a5000000-0000-0000-0000-000000000001', 'Updated question?', 'Updated answer', 20)$$, 'admin updates question and answer atomically');
+select lives_ok($call$select public.create_quiz_question(
+  'a6000000-0000-0000-0000-000000000001',
+  'a5000000-0000-0000-0000-000000000001',
+  'Created question?', 10, 0,
+  '[{"id":"a6100000-0000-0000-0000-000000000001","text":"Created A","displayOrder":0,"isCorrect":true},{"id":"a6100000-0000-0000-0000-000000000002","text":"Created B","displayOrder":1,"isCorrect":false},{"id":"a6100000-0000-0000-0000-000000000003","text":"Created C","displayOrder":2,"isCorrect":false},{"id":"a6100000-0000-0000-0000-000000000004","text":"Created D","displayOrder":3,"isCorrect":false}]'::jsonb
+)$call$, 'admin creates a question and four protected choices atomically');
+select results_eq($$select choices->0->>'text' from public.get_admin_quiz_questions('a1111111-1111-1111-1111-111111111111') where id = 'a6000000-0000-0000-0000-000000000001'$$, $$values ('Created A'::text)$$, 'admin listing includes ordered protected choices');
+select lives_ok($call$select public.update_quiz_question(
+  'a6000000-0000-0000-0000-000000000001',
+  'a5000000-0000-0000-0000-000000000001',
+  'Updated question?', 20,
+  '[{"id":"a6100000-0000-0000-0000-000000000001","text":"Updated A","displayOrder":0,"isCorrect":false},{"id":"a6100000-0000-0000-0000-000000000002","text":"Updated B","displayOrder":1,"isCorrect":true},{"id":"a6100000-0000-0000-0000-000000000003","text":"Updated C","displayOrder":2,"isCorrect":false},{"id":"a6100000-0000-0000-0000-000000000004","text":"Updated D","displayOrder":3,"isCorrect":false}]'::jsonb
+)$call$, 'admin updates a question and its four choices atomically');
 select lives_ok($$select public.reorder_quiz_questions('a5000000-0000-0000-0000-000000000001', array['a6000000-0000-0000-0000-000000000001']::uuid[])$$, 'admin reorders every question in a category');
 select lives_ok($$select public.delete_quiz_question('a6000000-0000-0000-0000-000000000001')$$, 'admin deletes an unused question');
 select throws_ok($$select public.delete_quiz_question('95000000-0000-0000-0000-000000000001')$$, 'P0001', 'question_already_used', 'an answered question cannot be deleted');
